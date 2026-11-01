@@ -101,43 +101,53 @@ export default {
  async fetch(request, env) {
   const url = new URL(request.url);
   const headers = {"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"};
+
   if (request.method === "GET" && url.pathname === "/") {
    return new Response(PAGE,{headers:{"Content-Type":"text/html; charset=utf-8"}});
   }
+
   if (request.method === "POST" && url.pathname === "/api/status") {
-   try {
-    const body = await request.json();
-    return Response.json({ok:body.pin === env.NEXUS_PIN},{status:body.pin === env.NEXUS_PIN ? 200 : 401,headers});
-   } catch { return Response.json({error:"Ungültige Anfrage"},{status:400,headers}); }
+   const body = await request.json();
+   if (body.pin && body.pin === env.NEXUS_PIN) {
+    return Response.json({ok:true},{headers});
+   }
+   return Response.json({error:"PIN falsch"},{status:401,headers});
   }
+
   if (request.method === "POST" && url.pathname === "/api/chat") {
-   if (!env.NEXUS_PIN || request.headers.get("Authorization") !== "Bearer "+env.NEXUS_PIN) {
+   if (!env.NEXUS_PIN || request.headers.get("Authorization") !== "Bearer " + env.NEXUS_PIN) {
     return Response.json({error:"Nicht angemeldet"},{status:401,headers});
    }
+
    try {
     const body = await request.json();
     const message = String(body.message || "").trim();
-    if (!message) return Response.json({error:"Nachricht fehlt"},{status:400,headers});
-    const result = await env.AI.run(MODEL,{messages:[
-     {role:"system",content:"Du bist NEXUS AI, ein hilfreicher, intelligenter und ehrlicher persönlicher KI-Assistent. Antworte standardmäßig auf Deutsch. Sei klar und lösungsorientiert."},
-     {role:"user",content:message}
-    ]});
-    const stream = await env.AI.run(MODEL,{
- messages:[
-  {role:"system",content:"Du bist NEXUS AI. Antworte auf Deutsch, direkt und verständlich. Halte Antworten möglichst kurz."},
-  {role:"user",content:message}
- ],
- stream:true,
- max_tokens:512
-});
-return new Response(stream,{
- headers:{
-  "Content-Type":"text/event-stream; charset=utf-8",
-  "Cache-Control":"no-cache"
- }
-});
+
+    if (!message) {
+     return Response.json({error:"Nachricht fehlt"},{status:400,headers});
+    }
+
+    const stream = await env.AI.run(MODEL, {
+     messages: [
+      {role:"system",content:"Du bist NEXUS AI. Antworte auf Deutsch, direkt und verständlich. Halte Antworten möglichst kurz."},
+      {role:"user",content:message}
+     ],
+     stream:true,
+     max_tokens:512
+    });
+
+    return new Response(stream, {
+     headers: {
+      "Content-Type":"text/event-stream; charset=utf-8",
+      "Cache-Control":"no-cache"
+     }
+    });
+
+   } catch (e) {
+    return Response.json({error:"KI-Fehler: " + e.message},{status:500,headers});
    }
   }
+
   return new Response("Nicht gefunden",{status:404});
  }
 };
