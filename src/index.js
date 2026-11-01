@@ -57,7 +57,37 @@ q.value="";add(value,"user");
 const b=document.getElementById("send");b.disabled=true;b.textContent="NEXUS denkt …";
 try{
 const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({message:value})});
-const data=await r.json();add(data.reply||data.error||"Keine Antwort erhalten.","");
+if (!r.ok) {
+ const data=await r.json();
+ add(data.error||"Fehler beim Antworten.","");
+ throw new Error(data.error||"Fehler beim Antworten.");
+}
+const reader=r.body.getReader();
+const decoder=new TextDecoder();
+let buffer="";
+let answer="";
+const bubble=document.createElement("div");
+bubble.className="msg";
+chat.appendChild(bubble);
+
+while(true){
+ const {value,done}=await reader.read();
+ if(done)break;
+ buffer+=decoder.decode(value,{stream:true});
+ const lines=buffer.split("\n");
+ buffer=lines.pop();
+ for(const line of lines){
+  if(!line.startsWith("data:"))continue;
+  const raw=line.slice(5).trim();
+  if(!raw||raw==="[DONE]")continue;
+  try{
+   const item=JSON.parse(raw);
+   answer+=item.response||"";
+   bubble.textContent=answer;
+   chat.scrollTop=chat.scrollHeight;
+  }catch(e){}
+ }
+}
 }catch(e){add("Verbindungsfehler. Bitte erneut versuchen.","");}
 b.disabled=false;b.textContent="Senden";
 }
@@ -92,10 +122,20 @@ export default {
      {role:"system",content:"Du bist NEXUS AI, ein hilfreicher, intelligenter und ehrlicher persönlicher KI-Assistent. Antworte standardmäßig auf Deutsch. Sei klar und lösungsorientiert."},
      {role:"user",content:message}
     ]});
-    const reply = result.response || result.choices?.[0]?.message?.content || "Ich konnte keine Antwort erstellen.";
-    return Response.json({reply},{headers});
-   } catch(e) {
-    return Response.json({error:"KI-Fehler: "+e.message},{status:500,headers});
+    const stream = await env.AI.run(MODEL,{
+ messages:[
+  {role:"system",content:"Du bist NEXUS AI. Antworte auf Deutsch, direkt und verständlich. Halte Antworten möglichst kurz."},
+  {role:"user",content:message}
+ ],
+ stream:true,
+ max_tokens:512
+});
+return new Response(stream,{
+ headers:{
+  "Content-Type":"text/event-stream; charset=utf-8",
+  "Cache-Control":"no-cache"
+ }
+});
    }
   }
   return new Response("Nicht gefunden",{status:404});
