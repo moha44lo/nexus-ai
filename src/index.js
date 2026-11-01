@@ -82,7 +82,7 @@ const lines=buffer.split("\\n");
   if(!raw||raw==="[DONE]")continue;
   try{
    const item=JSON.parse(raw);
-   answer+=item.response||"";
+   answer+=item.response||item.choices?.[0]?.delta?.content||"";
    bubble.textContent=answer;
    chat.scrollTop=chat.scrollHeight;
   }catch(e){}
