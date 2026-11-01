@@ -1,4 +1,5 @@
-
+import { NEXUSWorkflow } from "./nexus-workflow.js";
+export { NEXUSWorkflow };
 const MODEL = "@cf/zai-org/glm-4.7-flash";
 
 const PAGE = `<!DOCTYPE html>
