@@ -173,32 +173,18 @@ button:disabled{opacity:.5;cursor:wait}
   </div>
  </section>
 </main>
-
-<h1>NEXUS AI</h1>
-<p>Dein privater KI-Assistent</p>
-<div id="login">
-<p>PIN eingeben</p>
-<input id="pin" type="password" placeholder="Deine persönliche PIN">
-<button id="loginBtn">Anmelden</button>
-<p id="error"></p>
-</div>
-<div id="app">
-<div id="chat"><div class="msg">Hallo! Ich bin NEXUS. Was kann ich für dich tun?</div></div>
-<input id="question" placeholder="Schreib deine Nachricht …">
-<button id="send">Senden</button>
-</div>
-</main>
 <script>
 let token="";
 const login=document.getElementById("login");
 const app=document.getElementById("app");
 const chat=document.getElementById("chat");
 function add(text,who){const d=document.createElement("div");d.className="msg "+who;d.textContent=text;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;}
-document.getElementById("loginBtn").onclick=async()=>{
 document.getElementById("newChat").onclick=()=>{
  chat.innerHTML='<div class="msg">Neuer Chat gestartet. Was kann ich für dich tun?</div>';
  document.getElementById("question").value="";
 };
+
+document.getElementById("loginBtn").onclick=async()=>{
 const p=document.getElementById("pin").value;
 const r=await fetch("/api/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin:p})});
 if(r.ok){token=p;login.style.display="none";app.style.display="block";}
