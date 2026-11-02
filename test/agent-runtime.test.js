@@ -55,3 +55,24 @@ test("planner accepts safe browser search steps", async () => {
   assert.equal(plan.steps[0].tool, "browser.search");
   assert.equal(plan.steps[0].args.query, "Cloudflare Workers AI");
 });
+
+
+test("rejects embedded credentials in browser URLs", () => {
+  assert.throws(() => validateBrowserUrl("https://user:secret@example.com"), /Zugangsdaten/);
+});
+
+test("blocks additional non-public IPv4 ranges", () => {
+  for (const ip of ["0.1.2.3", "100.64.0.1", "198.18.0.1", "198.51.100.7", "203.0.113.9", "224.0.0.1"]) {
+    assert.throws(() => validateBrowserUrl("http://" + ip), /gesperrt/);
+  }
+});
+
+test("blocks IPv6 unspecified, multicast and documentation ranges", () => {
+  for (const ip of ["[::]", "[ff02::1]", "[2001:db8::1]"]) {
+    assert.throws(() => validateBrowserUrl("http://" + ip), /gesperrt/);
+  }
+});
+
+test("blocks internal-only hostnames", () => {
+  assert.throws(() => validateBrowserUrl("http://vault.internal"), /gesperrt/);
+});
