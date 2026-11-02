@@ -41,6 +41,7 @@ export class NEXUSWorkflow extends WorkflowEntrypoint {
       task,
       answer: result.answer,
       agents: result.agents,
+      evolution: result.evolution,
       verification: result.verification,
       completedAt: new Date().toISOString()
     };
