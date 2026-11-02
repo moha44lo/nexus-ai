@@ -154,9 +154,11 @@ const PAGE = String.raw`<!doctype html>
 <div id="commandOverlay" class="command-overlay hidden" role="dialog" aria-modal="true" aria-label="NEXUS Schnellsteuerung"><div class="command-box"><input id="commandSearch" class="command-search" placeholder="Search the system or launch a command …" autocomplete="off"><div id="commandResults" class="command-results"></div><div class="command-hint">↑ ↓ NAVIGATE · ENTER SELECT · ESC CLOSE · CTRL K OPEN</div></div></div><div id="toast" class="toast hidden"></div>
 <script>
 let conversationId=null,mode="chat",busy=false,currentView="home";
+let sessionToken="";
+try{sessionToken=sessionStorage.getItem("nexus_session_token")||"";}catch{}
 const $=id=>document.getElementById(id);
 const chat=$("chat");
-async function api(path,options={}){const response=await fetch(path,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
+async function api(path,options={}){const headers={"Content-Type":"application/json",...(options.headers||{})};if(sessionToken)headers.Authorization="Bearer "+sessionToken;const response=await fetch(path,{...options,credentials:"include",cache:"no-store",headers});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
 function toast(message){const el=$("toast");el.textContent=message;el.classList.remove("hidden");setTimeout(()=>el.classList.add("hidden"),2600);}
 function bubble(text,who=""){const el=document.createElement("div");el.className="bubble "+who;el.textContent=text;chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return el;}
 function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",social:"Social Autopilot",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="social"){loadSocialPosts();loadSocialStatus();loadSocialAnalytics();}if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
@@ -187,8 +189,8 @@ document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLower
 async function createConversation(){const d=await api("/api/conversations",{method:"POST",body:"{}"});conversationId=d.conversation.id;chat.innerHTML="";bubble("Neue Aufgabe gestartet. NEXUS ist bereit.","system");}
 async function openConversation(id){conversationId=id;chat.innerHTML="";const d=await api("/api/history?conversationId="+encodeURIComponent(id));for(const m of d.messages||[])bubble(m.content,m.role==="user"?"user":"");}
 async function enter(){const d=await api("/api/conversations");$("loginView").classList.add("hidden");$("app").classList.remove("hidden");if(d.conversations?.length)await openConversation(d.conversations[0].id);else await createConversation();await Promise.all([refreshOverview(),refreshHealth()]);}
-$("loginForm").onsubmit=async e=>{e.preventDefault();$("loginError").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});$("pin").value="";await enter();}catch(err){$("loginError").textContent=err.message;}};
-$("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{location.reload();}};
+$("loginForm").onsubmit=async e=>{e.preventDefault();$("loginError").textContent="";try{const result=await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});sessionToken=result.sessionToken||"";try{if(sessionToken)sessionStorage.setItem("nexus_session_token",sessionToken);}catch{}$("pin").value="";await enter();}catch(err){$("loginError").textContent=err.message;}};
+$("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{sessionToken="";try{sessionStorage.removeItem("nexus_session_token");}catch{}location.reload();}};
 $("newChat").onclick=()=>createConversation().catch(e=>toast(e.message));$("newChatTop").onclick=()=>createConversation().catch(e=>toast(e.message));
 document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));$("question").placeholder=mode==="agent"?"Komplexes Ziel beschreiben — dein Agenten-Team übernimmt …":"Frage NEXUS etwas oder beschreibe dein Ziel …";});
 document.querySelectorAll("[data-prompt]").forEach(b=>b.onclick=()=>{$("question").value=b.dataset.prompt;$("question").focus();});
@@ -391,7 +393,9 @@ async function createSession(env) {
 }
 async function validSession(request, env) {
   if (!env.NEXUS_SESSION_SECRET) return false;
-  const token = cookieValue(request, "nexus_session");
+  const authorization = request.headers.get("Authorization") || "";
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = bearer || cookieValue(request, "nexus_session");
   if (!token) return false;
   const [expiresText, signature] = token.split(".");
   const expires = Number(expiresText);
@@ -551,7 +555,7 @@ export default {
         }
         await env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash = ?").bind(ipHash).run();
         const token = await createSession(env);
-        return json({ ok: true }, 200, { "Set-Cookie": cookieHeader(token) });
+        return json({ ok: true, sessionToken: token }, 200, { "Set-Cookie": cookieHeader(token) });
       } catch (error) { return json({ error: safeError(error) }, 400); }
     }
 
