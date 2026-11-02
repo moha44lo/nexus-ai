@@ -1,55 +1,45 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 
+const MODEL = "@cf/zai-org/glm-4.7-flash";
+
 export class NEXUSWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
     const task = String(event.payload?.task || "").trim();
-
-    if (!task) {
-      throw new Error("Kein Auftrag angegeben.");
-    }
+    if (!task) throw new Error("Kein Auftrag angegeben.");
 
     const plan = await step.do("Auftrag analysieren", async () => {
-      const result = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+      const result = await this.env.AI.run(MODEL, {
         messages: [
-          {
-            role: "system",
-            content: "Du bist NEXUS BRAIN. Analysiere den Auftrag und erstelle einen klaren Arbeitsplan auf Deutsch."
-          },
-          {
-            role: "user",
-            content: task
-          }
+          { role: "system", content: "Du bist NEXUS PLANER. Erstelle einen realistischen, nummerierten Arbeitsplan auf Deutsch. Behaupte keine externen Aktionen." },
+          { role: "user", content: task }
         ],
-        max_tokens: 700
+        max_tokens: 900
       });
-
       return result.response || "Kein Arbeitsplan erstellt.";
     });
 
-    const result = await step.do("Auftrag bearbeiten", async () => {
-      const answer = await this.env.AI.run("@cf/zai-org/glm-4.7-flash", {
+    const answer = await step.do("Auftrag bearbeiten", async () => {
+      const result = await this.env.AI.run(MODEL, {
         messages: [
-          {
-            role: "system",
-            content: "Du bist NEXUS. Arbeite den Auftrag sorgfältig ab. Behaupte niemals, externe Aktionen ausgeführt zu haben, wenn das nicht geschehen ist."
-          },
-          {
-            role: "user",
-            content: "Auftrag:\n" + task + "\n\nArbeitsplan:\n" + plan
-          }
+          { role: "system", content: "Du bist NEXUS AI. Arbeite den Auftrag anhand des Plans sorgfältig aus. Sei transparent über Grenzen und behaupte niemals externe Aktionen, die nicht ausgeführt wurden." },
+          { role: "user", content: `Auftrag:\n${task}\n\nArbeitsplan:\n${plan}` }
         ],
-        max_tokens: 1500
+        max_tokens: 2200
       });
-
-      return answer.response || "Kein Ergebnis erstellt.";
+      return result.response || "Kein Ergebnis erstellt.";
     });
 
-    return {
-      status: "completed",
-      task,
-      plan,
-      result,
-      completedAt: new Date().toISOString()
-    };
+    const verification = await step.do("Ergebnis prüfen", async () => {
+      const result = await this.env.AI.run(MODEL, {
+        messages: [
+          { role: "system", content: "Prüfe das Ergebnis auf Widersprüche, unbelegte Behauptungen und ausgelassene Anforderungen. Nenne kurz konkrete Grenzen." },
+          { role: "user", content: `Auftrag:\n${task}\n\nPlan:\n${plan}\n\nErgebnis:\n${answer}` }
+        ],
+        max_tokens: 700
+      });
+      return result.response || "Kein Qualitätscheck verfügbar.";
+    });
+
+    return { status: "completed", task, plan, answer, verification, completedAt: new Date().toISOString() };
   }
 }

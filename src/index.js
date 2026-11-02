@@ -1,293 +1,274 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
 export { NEXUSWorkflow };
-const MODEL = "@cf/zai-org/glm-4.7-flash";
 
-const PAGE = `<!DOCTYPE html>
+const MODEL = "@cf/zai-org/glm-4.7-flash";
+const SESSION_SECONDS = 60 * 60 * 24 * 7;
+const SYSTEM_PROMPT = `Du bist NEXUS AI, ein sorgfältiger, leistungsfähiger persönlicher KI-Assistent.
+Antworte standardmäßig auf Deutsch, außer der Nutzer schreibt klar in einer anderen Sprache.
+Sei direkt, hilfreich, strukturiert und ehrlich. Erfinde keine Quellen, Fakten oder ausgeführten Aktionen.
+Wenn dir aktuelle Informationen fehlen, sage das offen. Unterscheide klar zwischen Wissen, Schlussfolgerung und Unsicherheit.
+Führe keine externen Aktionen aus und behaupte das auch nicht, sofern kein entsprechendes Tool tatsächlich verfügbar ist.`;
+
+const PAGE = String.raw`<!doctype html>
 <html lang="de">
 <head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta charset="UTF-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090d18">
 <title>NEXUS AI</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#090d18;color:#f3f5ff;font-family:Arial,sans-serif;min-height:100vh;display:grid;place-items:center;padding:18px}
-main{width:100%;max-width:650px;background:#111827;border:1px solid #26334b;border-radius:20px;padding:22px}
-h1{letter-spacing:4px;margin:0;color:#9dbbff}p{color:#9ba9c2}
-#chat{height:55vh;overflow:auto;padding:12px 0}
-.msg{padding:12px 15px;border-radius:14px;margin:10px 0;white-space:pre-wrap;line-height:1.5;background:#202c40}
-.user{background:#263d62}
-input,button{font-size:16px;border-radius:10px;padding:13px;border:1px solid #34435c}
-input{background:#0b1220;color:white;width:100%;margin:8px 0}
-button{background:#769cff;color:#071020;font-weight:bold;cursor:pointer}
-#send{width:100%}
-#login{max-width:350px;margin:auto}
-#app{display:none}
-
-
-.layout{
- display:grid;
- grid-template-columns:230px minmax(0,1fr);
- max-width:1200px;
- width:100%;
- min-height:720px;
- padding:0;
- overflow:hidden;
-}
-.sidebar{
- background:#0b1220;
- border-right:1px solid #293750;
- padding:25px 17px;
- display:flex;
- flex-direction:column;
- gap:20px;
-}
-.brand{font-size:23px;font-weight:800;letter-spacing:3px;color:#fff}
-.brand span{color:#8eafff}
-.new-chat{background:#182943;color:#dce7ff;border:1px solid #344b70;text-align:left}
-.side-label{font-size:10px;letter-spacing:2px;color:#70819e;margin-top:15px}
-.history-item{font-size:13px;color:#bdc9df;background:#17243a;padding:12px;border-radius:10px}
-.side-bottom{margin-top:auto;font-size:10px;letter-spacing:2px;color:#60718f}
-.workspace{min-width:0;padding:25px 30px;display:flex;flex-direction:column}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding-bottom:20px;border-bottom:1px solid #293750}
-.top-title{font-weight:700;letter-spacing:2px}
-.online{font-size:12px;color:#8fa2c1;margin-top:7px}
-.online span{display:inline-block;width:7px;height:7px;border-radius:50%;background:#65d6a1;margin-right:7px}
-.avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#263d62;color:#b9ceff;font-weight:bold}
-.welcome{text-align:center;padding:35px 10px 15px}
-.welcome-icon{font-size:35px;color:#9bbaff}
-.welcome h2,#login h2{font-size:25px;margin:10px 0}
-.welcome p{font-size:13px}
-#login{width:100%;max-width:390px;margin:auto;padding:35px 10px}
-#app{flex:1;min-height:0}
-#chat{height:48vh;min-height:250px}
-.composer{display:flex;gap:10px;align-items:center;margin-top:12px}
-.composer input{flex:1;min-width:0;margin:0}
-.composer button{width:auto;white-space:nowrap}
-.disclaimer{text-align:center;font-size:10px;color:#657590;margin-top:12px}
-@media(max-width:650px){
- body{padding:0}
- .layout{display:block;min-height:100vh;border-radius:0}
- .sidebar{display:none}
- .workspace{padding:18px 15px;min-height:100vh}
- #chat{height:48vh}
- .welcome{padding-top:28px}
-}
-
+:root{color-scheme:dark;--bg:#080c15;--panel:#101827;--panel2:#141f31;--line:#26344b;--muted:#8798b4;--text:#edf3ff;--accent:#9bb8ff;--accent2:#6d8ff0}
 *{box-sizing:border-box}
-:root{color-scheme:dark}
-body{
- margin:0;min-height:100vh;padding:24px;
- display:grid;place-items:center;
- background:radial-gradient(ellipse at 50% 0%,#17294b 0%,#090d18 55%);
- color:#f4f6ff;font-family:Inter,Arial,sans-serif
-}
-main{
- width:100%;max-width:900px;min-height:650px;
- background:rgba(15,22,37,.94);
- border:1px solid #293750;border-radius:24px;
- padding:30px;box-shadow:0 25px 100px #0009;
-}
-h1{letter-spacing:5px;font-size:30px;color:#a8c4ff;margin:0}
-p{color:#98a8c2}
-#login{max-width:390px;margin:100px auto;text-align:center}
-#app{display:none}
-#chat{
- height:55vh;min-height:300px;max-height:600px;
- overflow:auto;padding:18px 4px;
- border-top:1px solid #293750;
- border-bottom:1px solid #293750;
-}
-.msg{
- padding:14px 17px;border-radius:16px;
- margin:12px 0;white-space:pre-wrap;
- line-height:1.6;background:#1b2940;
- border:1px solid #2a3c59;
-}
-.user{background:#263d62;margin-left:12%;border-color:#3d5d8c}
-input,button{
- width:100%;font-size:16px;border-radius:13px;
- padding:15px;border:1px solid #344661;
-}
-input{background:#0a1220;color:white;margin:12px 0}
-input:focus{outline:2px solid #729aff;border-color:transparent}
-button{
- background:linear-gradient(135deg,#8bb0ff,#6689ef);
- color:#071020;font-weight:700;cursor:pointer;
- transition:.2s;
-}
-button:hover{filter:brightness(1.12)}
-button:disabled{opacity:.5;cursor:wait}
-#send{margin-top:8px}
-#error{color:#ff8585}
-@media(max-width:600px){
- body{padding:0;display:block}
- main{min-height:100vh;border-radius:0;padding:22px 17px}
- #login{margin:100px auto}
- #chat{height:58vh}
- h1{font-size:26px}
-}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -10%,#1a2b4a 0%,#080c15 58%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,textarea{font:inherit}
+button{cursor:pointer}
+.shell{width:min(1200px,100%);min-height:100vh;margin:auto;display:grid;grid-template-columns:260px minmax(0,1fr);border-inline:1px solid #1c2940;background:#0b111d}
+.sidebar{padding:24px 17px;background:#0a101b;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:18px}
+.brand{font-weight:850;font-size:22px;letter-spacing:3px}.brand span{color:var(--accent)}
+.tag{font-size:10px;letter-spacing:2px;color:#657895}
+.newchat,.sidechat,.mode,.send,.loginbtn,.logout{border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);background:var(--panel2)}
+.newchat{text-align:left;background:#172640;border-color:#34496c}
+#conversations{display:grid;gap:7px}
+.sidechat{padding:10px 12px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;background:transparent;color:#b9c7dc}
+.sidechat.active{background:#182943;border-color:#3b5277}
+.sidebar-foot{margin-top:auto;color:#60728f;font-size:10px;letter-spacing:1.5px}
+.main{min-width:0;min-height:100vh;display:flex;flex-direction:column}
+.top{height:76px;padding:0 26px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.topname{font-weight:750;letter-spacing:2px}.status{font-size:12px;color:var(--muted);margin-top:5px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#65d6a1;margin-right:7px}
+.topright{display:flex;align-items:center;gap:12px}.avatar{height:36px;width:36px;border-radius:50%;display:grid;place-items:center;background:#243858;color:#c8d8ff;font-weight:800}
+.logout{padding:8px 10px;font-size:12px}
+.content{width:min(850px,100%);margin:0 auto;padding:26px 26px 18px;display:flex;flex:1;min-height:0;flex-direction:column}
+.login{width:min(390px,calc(100% - 36px));margin:auto;text-align:center;padding:35px 0}
+.login h1{font-size:27px;margin:0 0 10px}.sub{color:var(--muted);line-height:1.6;font-size:14px}
+.field{width:100%;border:1px solid #30415c;background:#0a1220;color:var(--text);border-radius:13px;padding:15px;margin:10px 0;outline:none}
+.field:focus{border-color:#7f9ff4;box-shadow:0 0 0 3px #789aff20}
+.loginbtn,.send{background:linear-gradient(135deg,#a9c2ff,#6f91f1);border:0;color:#071020;font-weight:800}
+#error{color:#ff9292;min-height:22px;font-size:13px}
+#app{display:none;flex:1;min-height:0;flex-direction:column}
+.welcome{text-align:center;padding:12px 10px 20px}
+.mark{font-size:31px;color:var(--accent)}.welcome h1{font-size:25px;margin:8px 0}.welcome p{margin:0;color:var(--muted);font-size:13px}
+.modes{display:flex;gap:8px;justify-content:center;margin-top:16px}
+.mode{padding:8px 14px;font-size:12px;color:#b8c8e4}.mode.active{background:#243858;border-color:#7898e6;color:white}
+#chat{flex:1;min-height:260px;max-height:calc(100vh - 310px);overflow:auto;padding:12px 3px 22px;scroll-behavior:smooth}
+.msg{max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;padding:13px 16px;margin:11px 0;border-radius:16px;background:#172338;border:1px solid #283a56}
+.msg.user{margin-left:auto;background:#203a60;border-color:#3a5b8a}
+.msg.system{max-width:100%;background:#101a2a;color:#9eb0cd;font-size:12px}
+.composer{display:flex;gap:9px;align-items:end;padding-top:12px;border-top:1px solid var(--line)}
+#question{flex:1;min-height:52px;max-height:150px;resize:vertical;margin:0}
+.send{min-width:105px;height:52px}
+.disclaimer{text-align:center;color:#647591;font-size:10px;padding:12px 0 2px}
+.hidden{display:none!important}
+@media(max-width:700px){.shell{display:block;border:0}.sidebar{display:none}.top{height:64px;padding:0 16px}.content{padding:18px 14px 12px;min-height:calc(100vh - 64px)}#chat{max-height:none}.msg{max-width:94%}.welcome{padding-top:5px}.send{min-width:82px}.logout{font-size:11px}}
 </style>
-
 </head>
 <body>
-
-<main class="layout">
- <aside class="sidebar">
+<div class="shell">
+<aside class="sidebar">
   <div class="brand">NEXUS<span> AI</span></div>
-  <button id="newChat" class="new-chat">+ Neuer Chat</button>
-  <div class="side-label">DEINE CHATS</div>
-  <div class="history-item">◇ Aktuelle Unterhaltung</div>
-  <div class="side-bottom">PRIVATE AI EXPERIENCE</div>
- </aside>
-
- <section class="workspace">
-  <header class="topbar">
-   <div>
-    <div class="top-title">NEXUS AI</div>
-    <div class="online"><span></span> KI-Assistent bereit</div>
-   </div>
-   <div class="avatar">N</div>
-  </header>
-
-  <div id="login">
-   <h2>Willkommen zurück.</h2>
-   <p>Melde dich bei deinem privaten KI-Assistenten an.</p>
-   <input id="pin" type="password" placeholder="Deine persönliche PIN">
-   <button id="loginBtn">NEXUS öffnen →</button>
-   <p id="error"></p>
+  <button id="newChat" class="newchat">＋ Neuer Chat</button>
+  <div class="tag">DEINE UNTERHALTUNGEN</div>
+  <div id="conversations"></div>
+  <div class="sidebar-foot">PRIVATE AI WORKSPACE</div>
+</aside>
+<main class="main">
+<header class="top">
+  <div><div class="topname">NEXUS AI</div><div class="status"><span class="dot"></span>Dein KI-Assistent</div></div>
+  <div class="topright"><button id="logout" class="logout">Abmelden</button><div class="avatar">N</div></div>
+</header>
+<section id="login" class="login">
+  <div class="mark">✳</div><h1>Willkommen zurück.</h1>
+  <p class="sub">Dein persönlicher KI-Arbeitsbereich.<br>Gib deine private PIN ein, um fortzufahren.</p>
+  <form id="loginForm"><input id="pin" class="field" type="password" autocomplete="current-password" placeholder="Deine PIN" required><button class="loginbtn" type="submit" style="width:100%;padding:15px;border-radius:13px">NEXUS öffnen →</button></form>
+  <div id="error"></div>
+</section>
+<section id="app">
+  <div class="welcome"><div class="mark">✳</div><h1>Was machen wir heute?</h1><p>Fragen, Ideen, Planung und komplexe Aufgaben.</p>
+    <div class="modes"><button class="mode active" data-mode="chat">Chat</button><button class="mode" data-mode="agent">Agent-Modus</button></div>
   </div>
-
-  <div id="app">
-   <div class="welcome">
-    <div class="welcome-icon">✳</div>
-    <h2>Was machen wir heute?</h2>
-    <p>Dein persönlicher KI-Assistent. Alles an einem Ort.</p>
-   </div>
-   <div id="chat">
-    <div class="msg">Hallo! Ich bin NEXUS. Was kann ich für dich tun?</div>
-   </div>
-   <div class="composer">
-    <input id="question" placeholder="Frag NEXUS alles …">
-    <button id="send">Senden ↑</button>
-   </div>
-   <div class="disclaimer">NEXUS AI kann Fehler machen. Überprüfe wichtige Informationen.</div>
-  </div>
- </section>
+  <div id="chat"><div class="msg">Hallo! Ich bin NEXUS. Was möchtest du angehen?</div></div>
+  <form id="composer" class="composer"><textarea id="question" class="field" rows="1" placeholder="Schreib NEXUS eine Nachricht …"></textarea><button id="send" class="send" type="submit">Senden ↑</button></form>
+  <div class="disclaimer">NEXUS kann Fehler machen. Prüfe wichtige Informationen.</div>
+</section>
 </main>
+</div>
 <script>
-let token="";
-const login=document.getElementById("login");
-const app=document.getElementById("app");
-const chat=document.getElementById("chat");
-function add(text,who){const d=document.createElement("div");d.className="msg "+who;d.textContent=text;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;}
-document.getElementById("newChat").onclick=()=>{
- chat.innerHTML='<div class="msg">Neuer Chat gestartet. Was kann ich für dich tun?</div>';
- document.getElementById("question").value="";
-};
-
-document.getElementById("loginBtn").onclick=async()=>{
-const p=document.getElementById("pin").value;
-const r=await fetch("/api/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin:p})});
-if(r.ok){token=p;login.style.display="none";app.style.display="block";}
-else document.getElementById("error").textContent="PIN falsch. Bitte erneut versuchen.";
-};
-async function send(){
-const q=document.getElementById("question");
-const value=q.value.trim();if(!value)return;
-q.value="";add(value,"user");
-const b=document.getElementById("send");b.disabled=true;b.textContent="NEXUS denkt …";
-try{
-const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({message:value})});
-if (!r.ok) {
- const data=await r.json();
- add(data.error||"Fehler beim Antworten.","");
- throw new Error(data.error||"Fehler beim Antworten.");
-}
-const reader=r.body.getReader();
-const decoder=new TextDecoder();
-let buffer="";
-let answer="";
-const bubble=document.createElement("div");
-bubble.className="msg";
-chat.appendChild(bubble);
-
-while(true){
- const {value,done}=await reader.read();
- if(done)break;
- buffer+=decoder.decode(value,{stream:true});
-const lines=buffer.split("\\n");
- buffer=lines.pop();
- for(const line of lines){
-  if(!line.startsWith("data:"))continue;
-  const raw=line.slice(5).trim();
-  if(!raw||raw==="[DONE]")continue;
-  try{
-   const item=JSON.parse(raw);
-   answer+=item.response||item.choices?.[0]?.delta?.content||"";
-   bubble.textContent=answer;
-   chat.scrollTop=chat.scrollHeight;
-  }catch(e){}
- }
-}
-}catch(e){add("Verbindungsfehler. Bitte erneut versuchen.","");}
-b.disabled=false;b.textContent="Senden";
-}
-document.getElementById("send").onclick=send;
-document.getElementById("question").addEventListener("keydown",e=>{if(e.key==="Enter")send();});
+let conversationId=null,mode="chat",busy=false;
+const $=id=>document.getElementById(id);
+const login=$("login"),app=$("app"),chat=$("chat");
+function addMessage(text,who=""){const el=document.createElement("div");el.className="msg "+who;el.textContent=text;chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return el;}
+async function api(path,options={}){const response=await fetch(path,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
+async function loadConversations(){const data=await api("/api/conversations");const host=$("conversations");host.innerHTML="";for(const item of data.conversations||[]){const b=document.createElement("button");b.className="sidechat"+(item.id===conversationId?" active":"");b.textContent=item.title||"Neuer Chat";b.onclick=()=>openConversation(item.id);host.appendChild(b);}}
+async function openConversation(id){conversationId=id;chat.innerHTML="";const data=await api("/api/history?conversationId="+encodeURIComponent(id));for(const m of data.messages||[])addMessage(m.content,m.role==="user"?"user":"");await loadConversations();}
+async function createConversation(){const data=await api("/api/conversations",{method:"POST",body:"{}"});conversationId=data.conversation.id;chat.innerHTML="";addMessage("Neuer Chat gestartet. Was kann ich für dich tun?");await loadConversations();}
+async function enter(){login.classList.add("hidden");app.style.display="flex";await loadConversations();const list=await api("/api/conversations");if(list.conversations?.length)await openConversation(list.conversations[0].id);else await createConversation();}
+$("loginForm").addEventListener("submit",async e=>{e.preventDefault();$("error").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});$("pin").value="";await enter();}catch(err){$("error").textContent=err.message;}});
+$("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{location.reload();}};
+$("newChat").onclick=()=>createConversation().catch(e=>addMessage(e.message,"system"));
+document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll(".mode").forEach(x=>x.classList.toggle("active",x===b));$("question").placeholder=mode==="agent"?"Beschreibe eine komplexe Aufgabe für NEXUS …":"Schreib NEXUS eine Nachricht …";});
+$("composer").addEventListener("submit",async e=>{e.preventDefault();if(busy)return;const value=$("question").value.trim();if(!value)return;if(!conversationId)await createConversation();$("question").value="";addMessage(value,"user");busy=true;$("send").disabled=true;$("send").textContent="Denkt …";const pending=addMessage(mode==="agent"?"NEXUS plant und prüft deine Aufgabe …":"NEXUS denkt …","system");try{const data=await api(mode==="agent"?"/api/agent":"/api/chat",{method:"POST",body:JSON.stringify({message:value,conversationId})});pending.className="msg";pending.textContent=mode==="agent"?(("ARBEITSPLAN\n"+(data.plan||"")+"\n\nERGEBNIS\n"+(data.answer||"")+"\n\nQUALITÄTSCHECK\n"+(data.verification||""))):data.answer;await loadConversations();}catch(err){pending.textContent="Fehler: "+err.message;}finally{busy=false;$("send").disabled=false;$("send").textContent="Senden ↑";}});
+$("question").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("composer").requestSubmit();}});
 </script>
 </body>
 </html>`;
 
+function json(data, status = 200, extra = {}) {
+  return Response.json(data, { status, headers: { "Cache-Control": "no-store", ...extra } });
+}
+function cookieValue(request, name) {
+  const header = request.headers.get("Cookie") || "";
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return rest.join("=");
+  }
+  return null;
+}
+async function hmac(secret, value) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+async function createSession(env) {
+  const expires = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
+  const payload = `nexus:${expires}`;
+  return `${expires}.${await hmac(env.NEXUS_SESSION_SECRET, payload)}`;
+}
+async function validSession(request, env) {
+  if (!env.NEXUS_SESSION_SECRET) return false;
+  const token = cookieValue(request, "nexus_session");
+  if (!token) return false;
+  const [expiresText, signature] = token.split(".");
+  const expires = Number(expiresText);
+  if (!Number.isSafeInteger(expires) || expires < Math.floor(Date.now() / 1000) || !signature) return false;
+  const expected = await hmac(env.NEXUS_SESSION_SECRET, `nexus:${expires}`);
+  return signature === expected;
+}
+function cookieHeader(value, secure = true) {
+  return `nexus_session=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}`;
+}
+function clearCookie() {
+  return "nexus_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
+}
+function requireDatabase(env) {
+  if (!env.DB) throw new Error("D1-Datenbank fehlt. Richte die DB-Bindung wie in README.md beschrieben ein.");
+}
+async function getConversation(env, id) {
+  return env.DB.prepare("SELECT id, title FROM conversations WHERE id = ?").bind(id).first();
+}
+async function saveMessage(env, conversationId, role, content) {
+  await env.DB.prepare("INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), conversationId, role, content, new Date().toISOString()).run();
+  await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
+    .bind(new Date().toISOString(), conversationId).run();
+}
+async function getContext(env, conversationId) {
+  const result = await env.DB.prepare("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 20")
+    .bind(conversationId).all();
+  return (result.results || []).reverse().map(row => ({ role: row.role, content: row.content }));
+}
+async function askAI(env, messages, maxTokens = 1600) {
+  const result = await env.AI.run(MODEL, { messages, max_tokens: maxTokens });
+  const answer = result?.response;
+  if (typeof answer !== "string" || !answer.trim()) throw new Error("Das KI-Modell hat keine Antwort geliefert.");
+  return answer.trim();
+}
+function safeError(error) {
+  return error instanceof Error ? error.message.slice(0, 300) : "Unbekannter Fehler";
+}
+
 export default {
- async fetch(request, env) {
-  const url = new URL(request.url);
-  const headers = {"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"};
-
-  if (request.method === "GET" && url.pathname === "/") {
-   return new Response(PAGE,{headers:{"Content-Type":"text/html; charset=utf-8"}});
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/status") {
-   const body = await request.json();
-   if (body.pin && body.pin === env.NEXUS_PIN) {
-    return Response.json({ok:true},{headers});
-   }
-   return Response.json({error:"PIN falsch"},{status:401,headers});
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/chat") {
-   if (!env.NEXUS_PIN || request.headers.get("Authorization") !== "Bearer " + env.NEXUS_PIN) {
-    return Response.json({error:"Nicht angemeldet"},{status:401,headers});
-   }
-
-   try {
-    const body = await request.json();
-    const message = String(body.message || "").trim();
-
-    if (!message) {
-     return Response.json({error:"Nachricht fehlt"},{status:400,headers});
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/") {
+      return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
-    const stream = await env.AI.run(MODEL, {
-     messages: [
-      {role:"system",content:"Du bist NEXUS AI. Antworte auf Deutsch, direkt und verständlich. Halte Antworten möglichst kurz."},
-      {role:"user",content:message}
-     ],
-     stream:true,
-     max_tokens:512
-    });
+    if (request.method === "POST" && url.pathname === "/api/login") {
+      try {
+        const body = await request.json();
+        if (!env.NEXUS_PIN || String(body.pin || "") !== env.NEXUS_PIN) return json({ error: "PIN falsch." }, 401);
+        if (!env.NEXUS_SESSION_SECRET || env.NEXUS_SESSION_SECRET.length < 32) {
+          return json({ error: "NEXUS_SESSION_SECRET fehlt oder ist zu kurz. Bitte ein Secret mit mindestens 32 Zeichen hinterlegen." }, 503);
+        }
+        const token = await createSession(env);
+        return json({ ok: true }, 200, { "Set-Cookie": cookieHeader(token) });
+      } catch (error) { return json({ error: safeError(error) }, 400); }
+    }
 
-    return new Response(stream, {
-     headers: {
-      "Content-Type":"text/event-stream; charset=utf-8",
-      "Cache-Control":"no-cache"
-     }
-    });
+    if (request.method === "POST" && url.pathname === "/api/logout") {
+      return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
+    }
 
-   } catch (e) {
-    return Response.json({error:"KI-Fehler: " + e.message},{status:500,headers});
-   }
+    if (!(await validSession(request, env))) return json({ error: "Nicht angemeldet. Bitte erneut anmelden." }, 401);
+
+    try {
+      requireDatabase(env);
+
+      if (request.method === "GET" && url.pathname === "/api/conversations") {
+        const result = await env.DB.prepare("SELECT id, title, updated_at FROM conversations ORDER BY updated_at DESC LIMIT 50").all();
+        return json({ conversations: result.results || [] });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/conversations") {
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+          .bind(id, "Neuer Chat", now, now).run();
+        return json({ conversation: { id, title: "Neuer Chat" } });
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/history") {
+        const id = url.searchParams.get("conversationId");
+        if (!id) return json({ error: "conversationId fehlt." }, 400);
+        const conversation = await getConversation(env, id);
+        if (!conversation) return json({ error: "Unterhaltung nicht gefunden." }, 404);
+        const result = await env.DB.prepare("SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 100")
+          .bind(id).all();
+        return json({ messages: result.results || [] });
+      }
+
+      if (request.method === "POST" && (url.pathname === "/api/chat" || url.pathname === "/api/agent")) {
+        const body = await request.json();
+        const message = String(body.message || "").trim().slice(0, 12000);
+        const conversationId = String(body.conversationId || "");
+        if (!message) return json({ error: "Bitte gib eine Nachricht ein." }, 400);
+        const conversation = await getConversation(env, conversationId);
+        if (!conversation) return json({ error: "Unterhaltung nicht gefunden. Starte bitte einen neuen Chat." }, 404);
+
+        const history = await getContext(env, conversationId);
+        await saveMessage(env, conversationId, "user", message);
+        const context = [...history, { role: "user", content: message }].slice(-20);
+
+        if (url.pathname === "/api/agent") {
+          const plan = await askAI(env, [
+            { role: "system", content: "Du bist NEXUS PLANER. Zerlege die Aufgabe in klare, realistische Schritte. Markiere notwendige Informationen und Grenzen. Behaupte keine externen Aktionen." },
+            ...context
+          ], 900);
+          const answer = await askAI(env, [
+            { role: "system", content: SYSTEM_PROMPT + "\nArbeite den Auftrag anhand des Plans aus. Wenn etwas nicht möglich ist, sage es klar." },
+            ...context,
+            { role: "assistant", content: "Arbeitsplan:\n" + plan }
+          ], 2200);
+          const verification = await askAI(env, [
+            { role: "system", content: "Du bist der unabhängige Qualitätsprüfer von NEXUS. Prüfe die Antwort auf Widersprüche, unbelegte Behauptungen, ausgelassene Anforderungen und klare Grenzen. Gib eine kurze Prüfung aus. Erfinde keine Tests." },
+            { role: "user", content: "Auftrag:\n" + message + "\n\nPlan:\n" + plan + "\n\nAntwort:\n" + answer }
+          ], 700);
+          const combined = `ARBEITSPLAN\n${plan}\n\nERGEBNIS\n${answer}\n\nQUALITÄTSCHECK\n${verification}`;
+          await saveMessage(env, conversationId, "assistant", combined);
+          await env.DB.prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title = ?")
+            .bind(message.slice(0, 54), new Date().toISOString(), conversationId, "Neuer Chat").run();
+          return json({ mode: "agent", plan, answer, verification });
+        }
+
+        const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT }, ...context], 1800);
+        await saveMessage(env, conversationId, "assistant", answer);
+        await env.DB.prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title = ?")
+          .bind(message.slice(0, 54), new Date().toISOString(), conversationId, "Neuer Chat").run();
+        return json({ mode: "chat", answer });
+      }
+
+      return new Response("Nicht gefunden", { status: 404 });
+    } catch (error) {
+      return json({ error: safeError(error) }, 500);
+    }
   }
-
-  return new Response("Nicht gefunden",{status:404});
- }
 };
