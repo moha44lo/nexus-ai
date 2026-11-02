@@ -634,6 +634,7 @@ export default {
         object.writeHttpMetadata(headers);
         headers.set("Cache-Control", "private, no-store");
         headers.set("Accept-Ranges", "bytes");
+        headers.set("Content-Length", String(object.range?.length ?? object.size));
         headers.set("Content-Disposition", "inline; filename=\"nexus-" + mediaAction[1] + ".mp4\"");
         let status = 200;
         if (object.range) {
