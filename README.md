@@ -34,7 +34,7 @@ Authenticated endpoints:
 - GET /api/social/tiktok/connect and GET /api/social/tiktok/callback
 - POST /api/social/tiktok/disconnect
 - POST /api/social/analytics/refresh and GET /api/social/analytics
-- POST /api/social/posts/:id/publish, /schedule, /publish-status
+- POST /api/social/posts/:id/publish, /schedule, /retry, /unschedule; GET /api/social/posts/:id/publish-status
 - GET /api/social/media/:id (authenticated video streaming)
 - GET /api/social/status
 - GET /api/social/posts
