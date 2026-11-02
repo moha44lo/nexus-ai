@@ -78,6 +78,8 @@ jobs:
           NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
           NEXUS_SESSION_SECRET: ${{ secrets.NEXUS_SESSION_SECRET }}
           NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           secrets_file="$(mktemp)"
