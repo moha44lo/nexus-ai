@@ -17,7 +17,7 @@ test("delegates work to three parallel specialist agents and synthesizes their r
   const events = [];
   const result = await runCrew(env, "Erstelle einen Plan", "Kontext", event => events.push(event));
   assert.equal(result.answer, "Geprüfte finale Antwort.");
-  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 3);
+  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 4);
   assert.equal(events.filter(event => event.status === "running").length, 4);
   assert.equal(calls.length, 5);
   assert.equal(result.verification.passed, true);
@@ -35,7 +35,7 @@ test("continues with available agents if one specialist fails", async () => {
   } } };
   const result = await runCrew(env, "Test");
   assert.equal(result.answer, "Geprüfte Teilantwort.");
-  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 2);
+  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 3);
   assert.equal(result.verification.passed, true);
 });
 
