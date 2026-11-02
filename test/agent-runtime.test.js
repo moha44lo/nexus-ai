@@ -44,3 +44,14 @@ test("independent reviewer can veto a planner proposal", async () => {
   const env = { AI: { run: async () => replies.shift() } };
   await assert.rejects(() => createPlan(env, "Prüfe diese Seite", []), /Review-Agent hat den Plan gestoppt/);
 });
+
+test("planner accepts safe browser search steps", async () => {
+  const replies = [
+    { response: JSON.stringify({ goal: "Recherche", summary: "Suche im Web", steps: [{ id: "s1", tool: "browser.search", args: { query: "Cloudflare Workers AI" } }] }) },
+    { response: JSON.stringify({ approved: true, reason: "Öffentliche Suche ist zulässig." }) }
+  ];
+  const env = { AI: { run: async () => replies.shift() } };
+  const plan = await createPlan(env, "Recherchiere Cloudflare Workers AI", []);
+  assert.equal(plan.steps[0].tool, "browser.search");
+  assert.equal(plan.steps[0].args.query, "Cloudflare Workers AI");
+});
