@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateBrowserUrl, createPlan, needsApproval } from "../src/agent-runtime.js";
+import { validateBrowserUrl, createPlan, needsApproval, classifyBrowserPage } from "../src/agent-runtime.js";
 
 test("accepts public HTTPS destinations", () => {
   assert.equal(validateBrowserUrl("https://example.com/path"), "https://example.com/path");
@@ -75,4 +75,23 @@ test("blocks IPv6 unspecified, multicast and documentation ranges", () => {
 
 test("blocks internal-only hostnames", () => {
   assert.throws(() => validateBrowserUrl("http://vault.internal"), /gesperrt/);
+});
+
+test("classifies CAPTCHA, login walls, 404 and public pages separately", () => {
+  assert.equal(classifyBrowserPage({ title: "DuckDuckGo", text: "Select all squares containing a duck" }), "captcha");
+  assert.equal(classifyBrowserPage({ status: 401, title: "Sign in" }), "login_or_restricted");
+  assert.equal(classifyBrowserPage({ status: 404, title: "Page not found" }), "not_found");
+  assert.equal(classifyBrowserPage({ status: 200, title: "Documentation", text: "Public documentation" }), "public");
+});
+
+test("reviewer false positives about general research do not block read-only plans", async () => {
+  const replies = [
+    { response: JSON.stringify({ goal: "Recherche", summary: "Öffentliche Quellen prüfen", steps: [{ id: "s1", tool: "browser.search", args: { query: "öffentliche Browser-Fehlerbehandlung" } }] }) },
+    { response: JSON.stringify({ approved: false, reason: "Allgemeine Recherche oder Training im künstlichen Sinne." }) }
+  ];
+  const env = { AI: { run: async () => replies.shift() } };
+  const plan = await createPlan(env, "Analysiere den letzten Recherche-Workflow und finde alternative öffentliche Quellen.", []);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.review.approved, true);
+  assert.match(plan.review.reason, /Fehlalarm/);
 });
