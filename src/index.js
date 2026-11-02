@@ -172,6 +172,38 @@ async function askAI(env, messages, maxTokens = 1600) {
   if (typeof answer !== "string" || !answer.trim()) throw new Error("Das KI-Modell hat keine Antwort geliefert.");
   return answer.trim();
 }
+async function processDueSchedules(env) {
+  requireDatabase(env);
+  const now = new Date();
+  const due = await env.DB.prepare("SELECT * FROM schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 10").bind(now.toISOString()).all();
+  for (const schedule of due.results || []) {
+    const next = new Date(now.getTime() + Math.max(5, Number(schedule.interval_minutes) || 60) * 60000).toISOString();
+    await env.DB.prepare("UPDATE schedules SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?").bind(now.toISOString(), next, now.toISOString(), schedule.id).run();
+    const runId = crypto.randomUUID();
+    try {
+      const memoryResult = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
+      const plan = await createPlan(env, schedule.task, memoryResult.results || []);
+      const approvalRequired = needsApproval(plan);
+      await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(runId, schedule.task, plan.goal, JSON.stringify(plan), approvalRequired ? "awaiting_approval" : "running", approvalRequired ? "Zeitplan wartet auf Freigabe." : plan.summary, now.toISOString(), now.toISOString()).run();
+      if (approvalRequired || plan.steps.length === 0) {
+        if (!approvalRequired) await env.DB.prepare("UPDATE agent_runs SET status = 'completed', summary = ?, result_json = ?, updated_at = ? WHERE id = ?").bind("Keine Browser-Aktionen erforderlich.", JSON.stringify({ plan }), new Date().toISOString(), runId).run();
+        continue;
+      }
+      const result = await runBrowserPlan(env, plan, async event => {
+        await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
+      });
+      const status = result.status === "completed" ? "completed" : "failed";
+      await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
+        .bind(status, JSON.stringify(result), status === "completed" ? "Zeitplan-Aufgabe abgeschlossen." : "Zeitplan-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+    } catch (error) {
+      await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, error, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'failed', ?, ?, ?, ?)")
+        .bind(runId, schedule.task, schedule.name, "{}", "Zeitplan-Ausführung fehlgeschlagen.", safeError(error), now.toISOString(), new Date().toISOString()).run();
+    }
+  }
+}
+
 function safeError(error) {
   return error instanceof Error ? error.message.slice(0, 300) : "Unbekannter Fehler";
 }
@@ -222,6 +254,31 @@ export default {
         await env.DB.prepare("DELETE FROM memory_facts WHERE id = ?").bind(url.pathname.split("/").pop()).run();
         return json({ ok: true });
       }
+      if (request.method === "GET" && url.pathname === "/api/schedules") {
+        const result = await env.DB.prepare("SELECT id, name, task, cron, timezone, interval_minutes, enabled, next_run_at, last_run_at FROM schedules ORDER BY created_at DESC LIMIT 100").all();
+        return json({ schedules: result.results || [] });
+      }
+      if (request.method === "POST" && url.pathname === "/api/schedules") {
+        const body = await request.json();
+        const name = String(body.name || "").trim().slice(0, 100), task = String(body.task || "").trim().slice(0, 12000);
+        const intervalMinutes = Number(body.intervalMinutes || 60);
+        if (!name || !task) return json({ error: "Name und Aufgabe sind erforderlich." }, 400);
+        if (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 10080) return json({ error: "Intervall muss zwischen 5 Minuten und 7 Tagen liegen." }, 400);
+        const id = crypto.randomUUID(), now = new Date(), next = new Date(now.getTime() + intervalMinutes * 60000).toISOString();
+        await env.DB.prepare("INSERT INTO schedules (id, name, task, cron, timezone, interval_minutes, enabled, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)")
+          .bind(id, name, task, "every " + intervalMinutes + " minutes", String(body.timezone || "Europe/Zurich").slice(0, 64), intervalMinutes, next, now.toISOString(), now.toISOString()).run();
+        return json({ ok: true, schedule: { id, name, task, intervalMinutes, nextRunAt: next } });
+      }
+      if (request.method === "PATCH" && url.pathname.startsWith("/api/schedules/")) {
+        const id = url.pathname.split("/").pop(), body = await request.json();
+        await env.DB.prepare("UPDATE schedules SET enabled = ?, updated_at = ? WHERE id = ?").bind(body.enabled === true ? 1 : 0, new Date().toISOString(), id).run();
+        return json({ ok: true });
+      }
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/schedules/")) {
+        await env.DB.prepare("DELETE FROM schedules WHERE id = ?").bind(url.pathname.split("/").pop()).run();
+        return json({ ok: true });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/agent/runs") {
         const result = await env.DB.prepare("SELECT id, task, goal, status, summary, error, created_at, updated_at FROM agent_runs ORDER BY created_at DESC LIMIT 50").all();
         return json({ runs: result.results || [] });
@@ -329,5 +386,8 @@ export default {
     } catch (error) {
       return json({ error: safeError(error) }, 500);
     }
+  },
+  scheduled(controller, env, ctx) {
+    ctx.waitUntil(processDueSchedules(env));
   }
 };
