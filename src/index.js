@@ -1,6 +1,7 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
 import { createPlan, needsApproval, runBrowserPlan } from "./agent-runtime.js";
 import { compileSkill } from "./skill-engine.js";
+import { handleMcpRequest } from "./mcp-server.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -231,6 +232,8 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/logout") {
       return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
     }
+
+    if (url.pathname === "/mcp") return handleMcpRequest(request, env);
 
     if (!(await validSession(request, env))) return json({ error: "Nicht angemeldet. Bitte erneut anmelden." }, 401);
 
