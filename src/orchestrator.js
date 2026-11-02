@@ -28,6 +28,7 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
         { role: "system", content: role.prompt + " Antworte auf Deutsch, präzise und mit belastbaren Begründungen." },
         { role: "user", content: shared }
       ], 850);
+      if (typeof output !== "string" || !output.trim()) throw new Error("Agent lieferte eine leere Antwort.");
       const item = { agent: role.id, name: role.name, title: role.title, status: "completed", output, createdAt: started };
       await onAgent(item);
       return item;
@@ -43,6 +44,7 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
     { role: "system", content: "Du bist NEXUS, der leitende Orchestrator. Führe die Ergebnisse des Strategists, Fach-Agenten und Kritik-Agenten zu einer einzigen exzellenten Antwort zusammen. Beantworte die eigentliche Nutzerfrage zuerst. Sei konkret, klar und ehrlich. Trenne Fakten, Annahmen und offene Punkte. Behaupte niemals, externe Aktionen seien ausgeführt worden, wenn das nicht in den Ergebnissen steht. Antworte auf Deutsch." },
     { role: "user", content: shared + "\n\nAgentenberichte:\n" + usable.map(x => "## " + x.title + "\n" + x.output).join("\n\n") }
   ], 1800);
+  if (typeof synthesis !== "string" || !synthesis.trim()) throw new Error("NEXUS konnte die Agentenberichte nicht zuverlässig zusammenführen.");
   return {
     answer: synthesis,
     agents: results.map(({ agent, name, title, status, output }) => ({ agent, name, title, status, output })),
