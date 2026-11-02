@@ -226,7 +226,7 @@ function renderSocialResult(post){
  host.append(safeText("div","COVER: "+(post.cover_text||"")+" · CTA: "+(post.cta||""),"social-caption"));
  const videoPanel=document.createElement("section");videoPanel.className="social-video-panel";
  if(post.video_url){const video=document.createElement("video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=post.video_url;videoPanel.append(video);videoPanel.append(safeText("div","KI-Clip · "+(post.video_duration||5)+" Sekunden · 9:16 · 720p · Anbieter-Vorschau-Link","video-note"));const openVideo=document.createElement("a");openVideo.href=post.video_url;openVideo.target="_blank";openVideo.rel="noopener";openVideo.textContent="Video separat öffnen ↗";openVideo.className="secondary";videoPanel.append(openVideo);}
- else {const controls=document.createElement("div");controls.className="social-video-actions";const duration=document.createElement("select");duration.id="socialVideoDuration";[5,10,15].forEach(seconds=>{const option=document.createElement("option");option.value=String(seconds);option.textContent=seconds+" Sekunden · ca. $"+(seconds*.07).toFixed(2);duration.append(option);});controls.append(duration);const makeVideo=document.createElement("button");makeVideo.className="primary";makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";makeVideo.onclick=async()=>{if(!post.id)return;makeVideo.disabled=true;makeVideo.textContent="VIDEO ENGINE LÄUFT …";try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/video",{method:"POST",body:JSON.stringify({duration_seconds:Number(duration.value)})});Object.assign(post,d.post);renderSocialResult(post);await loadSocialPosts();toast("KI-Video wurde erstellt.");}catch(err){toast("Video: "+err.message);makeVideo.disabled=false;makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";}};controls.append(makeVideo);videoPanel.append(controls);videoPanel.append(safeText("div","Geschätzte Modellkosten bei 720p: $0.07 pro Sekunde. Generierung startet erst nach deinem Klick. Noch kein automatisches Posting.","video-note"));}
+ else {const controls=document.createElement("div");controls.className="social-video-actions";const duration=document.createElement("select");duration.id="socialVideoDuration";[5,10,15].forEach(seconds=>{const option=document.createElement("option");option.value=String(seconds);option.textContent=seconds+" Sekunden · ca. $"+(seconds*.07).toFixed(2);duration.append(option);});controls.append(duration);const makeVideo=document.createElement("button");makeVideo.className="primary";makeVideo.disabled=post.video_status==="generating";makeVideo.textContent=post.video_status==="generating"?"VIDEO WIRD ERSTELLT …":"▶ KI-VIDEO ERSTELLEN";makeVideo.onclick=async()=>{if(!post.id)return;makeVideo.disabled=true;makeVideo.textContent="VIDEO ENGINE LÄUFT …";try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/video",{method:"POST",body:JSON.stringify({duration_seconds:Number(duration.value)})});Object.assign(post,d.post);renderSocialResult(post);await loadSocialPosts();toast("KI-Video wurde erstellt.");}catch(err){toast("Video: "+err.message);makeVideo.disabled=false;makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";}};controls.append(makeVideo);videoPanel.append(controls);videoPanel.append(safeText("div","Geschätzte Modellkosten bei 720p: $0.07 pro Sekunde. Generierung startet erst nach deinem Klick. Noch kein automatisches Posting.","video-note"));}
  host.append(videoPanel);
  const actions=document.createElement("div");actions.className="social-actions";
  const copy=document.createElement("button");copy.className="secondary";copy.textContent="Caption kopieren";copy.onclick=async()=>{try{await navigator.clipboard.writeText(post.caption+"\n\n"+(post.hashtags||[]).map(x=>"#"+x).join(" "));toast("Caption kopiert.");}catch{toast("Kopieren nicht möglich – bitte Text markieren.");}};actions.append(copy);
@@ -670,31 +670,41 @@ export default {
           "Style: polished creator-grade cinematography, visually striking opening frame, coherent motion, natural lighting, no subtitles, no logos, no watermarks.",
           "Audio: synchronized natural ambient sound and tasteful cinematic sound design. No copyrighted songs."
         ].join("\n")).trim().slice(0, 3000);
+        if (!["draft", "approved"].includes(row.status)) return json({ error: "Videos können nur für Entwürfe oder freigegebene Beiträge neu erstellt werden." }, 409);
         if (!env.AI?.run) return json({ error: "Workers AI ist nicht verfügbar." }, 503);
         if (!env.SOCIAL_MEDIA) return json({ error: "R2-Speicher ist noch nicht eingerichtet. Deployment mit SOCIAL_MEDIA-Bucket abwarten." }, 503);
-        const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
-        const providerUrl = output?.result?.video || output?.video || output?.result?.url;
-        if (!providerUrl || !/^https:\/\//i.test(providerUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
-        const remote = await fetch(providerUrl);
-        if (!remote.ok || !remote.body) return json({ error: "Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ")." }, 502);
-        const declaredSize = Number(remote.headers.get("Content-Length") || 0);
-        if (declaredSize > 64 * 1024 * 1024) return json({ error: "Der Clip ist größer als das derzeit unterstützte 64-MB-Limit." }, 413);
-        const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
-        const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
-        if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
-          await env.SOCIAL_MEDIA.delete(key);
-          return json({ error: "Videodatei ist leer oder größer als das 64-MB-Limit." }, 413);
+        const claim = await env.DB.prepare("UPDATE social_posts SET video_status = 'generating', updated_at = ? WHERE id = ? AND status IN ('draft','approved') AND (video_status IS NULL OR video_status <> 'generating')").bind(new Date().toISOString(), id).run();
+        if (!claim.meta?.changes) return json({ error: "Für diesen Beitrag läuft bereits eine Video-Generierung oder der Status hat sich geändert." }, 409);
+        try {
+          const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
+          const providerUrl = output?.result?.video || output?.video || output?.result?.url;
+          if (!providerUrl || !/^https:\/\//i.test(providerUrl)) throw new Error("Video-Modell hat keinen gültigen Video-Link zurückgegeben (" + (output?.state || "unknown") + ").");
+          const remote = await fetch(providerUrl);
+          if (!remote.ok || !remote.body) throw new Error("Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ").");
+          const declaredSize = Number(remote.headers.get("Content-Length") || 0);
+          if (declaredSize > 64 * 1024 * 1024) throw new Error("Der Clip ist größer als das derzeit unterstützte 64-MB-Limit.");
+          const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
+          const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+          if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
+            await env.SOCIAL_MEDIA.delete(key);
+            throw new Error("Videodatei ist leer oder größer als das 64-MB-Limit.");
+          }
+          const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
+          await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
+            .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
+          if (row.video_storage_key && row.video_storage_key !== key) await env.SOCIAL_MEDIA.delete(row.video_storage_key);
+          return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
+        } catch (error) {
+          await env.DB.prepare("UPDATE social_posts SET video_status = ?, updated_at = ? WHERE id = ? AND video_status = 'generating'")
+            .bind(row.video_storage_key ? "ready" : "failed", new Date().toISOString(), id).run();
+          throw error;
         }
-        const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
-        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
-          .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
-        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
       }
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
         const input = normalizeSocialInput(body);
         const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
-        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
+        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\n");
         if (performanceContext) input.account_context = (input.account_context + "\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
@@ -722,7 +732,7 @@ export default {
         const body = await request.json().catch(() => ({}));
         const privacy = String(body.privacy_level || "SELF_ONLY");
         if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
-        if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
+        if (!post.video_storage_key || post.video_status === "generating") return json({ error: "Bitte zuerst ein fertig gespeichertes KI-Video erstellen." }, 409);
         if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
         if (action === "schedule" && (post.provider_post_id || post.publish_status)) return json({ error: "Dieser Beitrag wird bereits an TikTok übertragen und kann nicht mehr umgeplant werden." }, 409);
         if (action === "unschedule") {
