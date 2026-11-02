@@ -690,9 +690,13 @@ export default {
           if (!post.provider_post_id) return json({ error: "Für diesen Beitrag gibt es noch keine TikTok-Publish-ID." }, 409);
           const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
           const state = status.status || "PROCESSING_UPLOAD", complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
-          await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, published_url = COALESCE(?, published_url), publish_error = ?, updated_at = ? WHERE id = ?")
-            .bind(state, complete ? "published" : failed ? "failed" : "queued", complete ? 1 : 0, new Date().toISOString(), status.share_url || null, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
-          return json({ id, status: complete ? "published" : failed ? "failed" : "queued", publish_status: state, published_url: status.share_url || null });
+          const publicIds = Array.isArray(status.publicaly_available_post_id) ? status.publicaly_available_post_id : [];
+          const videoId = publicIds.length ? String(publicIds[0]) : null;
+          const account = await env.DB.prepare("SELECT username FROM social_accounts WHERE platform = 'tiktok'").first();
+          const publishedUrl = videoId && account?.username ? "https://www.tiktok.com/@" + account.username + "/video/" + videoId : null;
+          await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, provider_video_id = COALESCE(?, provider_video_id), published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, published_url = COALESCE(?, published_url), publish_error = ?, updated_at = ? WHERE id = ?")
+            .bind(state, complete ? "published" : failed ? "failed" : "queued", videoId, complete ? 1 : 0, new Date().toISOString(), publishedUrl, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : failed ? "failed" : "queued", publish_status: state, published_url: publishedUrl });
         }
         const body = await request.json().catch(() => ({}));
         const privacy = String(body.privacy_level || "SELF_ONLY");
