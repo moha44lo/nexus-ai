@@ -115,6 +115,16 @@ export async function runBrowserPlan(env, plan, onStep = async () => {}) {
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(15000);
+    await page.setRequestInterception(true);
+    page.on("request", request => {
+      try {
+        const requestUrl = new URL(request.url());
+        if (["http:", "https:"].includes(requestUrl.protocol)) validateBrowserUrl(request.url());
+        request.continue();
+      } catch {
+        request.abort().catch(() => {});
+      }
+    });
     for (const step of plan.steps) {
       let output;
       if (step.tool === "browser.navigate") {
