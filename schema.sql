@@ -40,6 +40,6 @@ CREATE TABLE IF NOT EXISTS skills (
 -- Schedule definitions; a cron trigger can execute due tasks.
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, task TEXT NOT NULL, cron TEXT NOT NULL,
-  timezone TEXT NOT NULL DEFAULT 'Europe/Zurich', enabled INTEGER NOT NULL DEFAULT 1,
+  timezone TEXT NOT NULL DEFAULT 'Europe/Zurich', interval_minutes INTEGER NOT NULL DEFAULT 60, enabled INTEGER NOT NULL DEFAULT 1,
   next_run_at TEXT, last_run_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
