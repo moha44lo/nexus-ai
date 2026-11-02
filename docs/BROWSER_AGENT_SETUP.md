@@ -68,3 +68,10 @@ Example local configuration (replace the URL and token locally; do not commit cr
 ```
 
 MCP is stateless and currently exposes these tools only. It does not yet expose a local Chrome session, arbitrary shell access, email, calendar, or third-party MCP server aggregation.
+
+
+## Multi-agent safety review
+
+Every browser plan is checked by a separate reviewer model before execution. The reviewer rejects unsupported or high-impact actions. Runtime validation independently limits the plan to the registered browser tools, caps the number of steps, validates destinations, and requires explicit user approval for clicks and form entry.
+
+The cloud browser also validates HTTP(S) destinations for page requests, including redirects and subresources, to block localhost and private-network targets. This is defense in depth, not a substitute for reviewing sensitive actions.
