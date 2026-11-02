@@ -230,6 +230,31 @@ restoreSession();
 </script></body></html>`;
 
 
+async function ensureSocialSchema(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_posts (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
+    niche TEXT NOT NULL,
+    objective TEXT NOT NULL DEFAULT 'growth',
+    language TEXT NOT NULL DEFAULT 'de',
+    title TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    script TEXT NOT NULL,
+    scenes_json TEXT NOT NULL DEFAULT '[]',
+    caption TEXT NOT NULL,
+    hashtags_json TEXT NOT NULL DEFAULT '[]',
+    cta TEXT NOT NULL DEFAULT '',
+    cover_text TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'queued', 'published', 'failed')),
+    scheduled_for TEXT,
+    published_at TEXT,
+    provider_post_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
+}
 function json(data, status = 200, extra = {}) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store", ...extra } });
 }
@@ -431,6 +456,7 @@ export default {
       }
 
       requireDatabase(env);
+      if (url.pathname.startsWith("/api/social/")) await ensureSocialSchema(env);
 
       if (request.method === "GET" && url.pathname === "/api/social/status") {
         const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
