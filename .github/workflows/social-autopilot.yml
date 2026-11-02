@@ -13,7 +13,7 @@ on:
     branches:
       - main
       - feature/social-autopilot-v1
-      - social-autopilot-hardening
+      - feature/social-autopilot-hardening
 
 jobs:
   validate:
