@@ -13,7 +13,7 @@ export function inspectAnswer(answer, task = "") {
       issues.push("Die Antwort enthält unerwartete fremde Schriftsysteme innerhalb eines lateinischen Textes.");
     }
   }
-  if (/[ÃÂ][\w]/.test(text)) issues.push("Die Antwort enthält mögliche Zeichenkodierungsfehler.");
+  if (text.includes("Ã") || text.includes("Â")) issues.push("Die Antwort enthält mögliche Zeichenkodierungsfehler.");
   if (/[,;:]\s*$/.test(text)) issues.push("Die Antwort endet möglicherweise mitten in einem Satz oder einer Aufzählung.");
   const repeated = text.match(/\b([\p{L}]{3,})\s+\1\b/iu);
   if (repeated) issues.push("Die Antwort enthält ein direkt wiederholtes Wort: " + repeated[1] + ".");
