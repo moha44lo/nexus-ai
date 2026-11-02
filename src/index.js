@@ -394,7 +394,7 @@ async function createSession(env) {
 async function validSession(request, env) {
   if (!env.NEXUS_SESSION_SECRET) return false;
   const authorization = request.headers.get("Authorization") || "";
-  const bearer = authorization.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   const token = bearer || cookieValue(request, "nexus_session");
   if (!token) return false;
   const [expiresText, signature] = token.split(".");
