@@ -89,7 +89,8 @@ export async function createPlan(env, task, memory = []) {
   let reviewReason = String(verdict.reason || "Plan geprüft.").slice(0, 250);
   if (verdict.approved !== true) {
     const readOnlyPlan = normalized.steps.every(step => ["browser.search", "browser.navigate", "browser.inspect", "browser.extract"].includes(step.tool));
-    const benignResearchConcern = /bibliograf|referenz|quellenliste|quellenangabe|zitat|citation|formatierte ausgabe|ausgabeformat|preisinformation|preisvergleich|url|benutzernachricht|geschäftliche notiz|wissenschaftliche notiz/i.test(reviewReason) && !/captcha umgehen|schutzmaßnahme umgehen|zugangsdaten|credential|passwort|token stehlen|zahlung|kauf|kontoänderung|nachrichtenversand|veröffentlichung|löschung/i.test(reviewReason);\n    const falsePositive = benignResearchConcern || /allgemeine recherche|training|trainieren|kalibrier|selbstanalyse|frühere workflow|vergangene sitzungen|dateiorientierte historie|reinforcement learning/i.test(reviewReason);
+    const benignResearchConcern = /bibliograf|referenz|quellenliste|quellenangabe|zitat|citation|formatierte ausgabe|ausgabeformat|preisinformation|preisvergleich|url|benutzernachricht|geschäftliche notiz|wissenschaftliche notiz/i.test(reviewReason) && !/captcha umgehen|schutzmaßnahme umgehen|zugangsdaten|credential|passwort|token stehlen|zahlung|kauf|kontoänderung|nachrichtenversand|veröffentlichung|löschung/i.test(reviewReason);
+    const falsePositive = benignResearchConcern || /allgemeine recherche|training|trainieren|kalibrier|selbstanalyse|frühere workflow|vergangene sitzungen|dateiorientierte historie|reinforcement learning/i.test(reviewReason);
     if (!(readOnlyPlan && falsePositive)) throw new Error("NEXUS Review-Agent hat den Plan gestoppt: " + reviewReason);
     reviewReason = "Sicherheitsprüfung: Ablehnung als Fehlalarm erkannt; ausschließlich lesende öffentliche Browser-Schritte werden zugelassen.";
   }
