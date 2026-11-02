@@ -1,4 +1,5 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
+import { createPlan, needsApproval, runBrowserPlan } from "./agent-runtime.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -203,6 +204,55 @@ export default {
     try {
       requireDatabase(env);
 
+      if (request.method === "GET" && url.pathname === "/api/memory") {
+        const result = await env.DB.prepare("SELECT id, fact, category, created_at FROM memory_facts ORDER BY updated_at DESC LIMIT 100").all();
+        return json({ facts: result.results || [] });
+      }
+      if (request.method === "POST" && url.pathname === "/api/memory") {
+        const body = await request.json();
+        const fact = String(body.fact || "").trim().slice(0, 1000);
+        const category = String(body.category || "general").trim().slice(0, 40) || "general";
+        if (!fact) return json({ error: "Memory-Fakt fehlt." }, 400);
+        const id = crypto.randomUUID(), now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO memory_facts (id, fact, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+          .bind(id, fact, category, now, now).run();
+        return json({ ok: true, id, fact, category });
+      }
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/memory/")) {
+        await env.DB.prepare("DELETE FROM memory_facts WHERE id = ?").bind(url.pathname.split("/").pop()).run();
+        return json({ ok: true });
+      }
+      if (request.method === "GET" && url.pathname === "/api/agent/runs") {
+        const result = await env.DB.prepare("SELECT id, task, goal, status, summary, error, created_at, updated_at FROM agent_runs ORDER BY created_at DESC LIMIT 50").all();
+        return json({ runs: result.results || [] });
+      }
+      if (request.method === "POST" && url.pathname === "/api/agent/approve") {
+        const body = await request.json();
+        const runId = String(body.runId || "");
+        const run = await env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(runId).first();
+        if (!run) return json({ error: "Agent-Lauf nicht gefunden." }, 404);
+        if (run.status !== "awaiting_approval") return json({ error: "Dieser Lauf wartet nicht auf Freigabe." }, 409);
+        const now = new Date().toISOString();
+        if (body.approved !== true) {
+          await env.DB.prepare("UPDATE agent_runs SET status = 'rejected', summary = ?, updated_at = ? WHERE id = ?").bind("Vom Nutzer abgelehnt.", now, runId).run();
+          const answer = "Abgelehnt. Es wurden keine Browser-Aktionen ausgeführt.";
+          await saveMessage(env, run.conversation_id, "assistant", answer);
+          return json({ status: "rejected", answer });
+        }
+        const plan = JSON.parse(run.plan_json);
+        await env.DB.prepare("UPDATE agent_runs SET status = 'running', updated_at = ? WHERE id = ?").bind(now, runId).run();
+        const result = await runBrowserPlan(env, plan, async event => {
+          await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
+        });
+        const status = result.status === "completed" ? "completed" : "failed";
+        await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
+          .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+        const answer = status === "completed" ? "Browser-Aufgabe abgeschlossen. Ergebnis:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
+        await saveMessage(env, run.conversation_id, "assistant", answer);
+        return json({ status, answer, result });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/conversations") {
         const result = await env.DB.prepare("SELECT id, title, updated_at FROM conversations ORDER BY updated_at DESC LIMIT 50").all();
         return json({ conversations: result.results || [] });
@@ -239,24 +289,33 @@ export default {
         const context = [...history, { role: "user", content: message }].slice(-20);
 
         if (url.pathname === "/api/agent") {
-          const plan = await askAI(env, [
-            { role: "system", content: "Du bist NEXUS PLANER. Zerlege die Aufgabe in klare, realistische Schritte. Markiere notwendige Informationen und Grenzen. Behaupte keine externen Aktionen." },
-            ...context
-          ], 900);
-          const answer = await askAI(env, [
-            { role: "system", content: SYSTEM_PROMPT + "\nArbeite den Auftrag anhand des Plans aus. Wenn etwas nicht möglich ist, sage es klar." },
-            ...context,
-            { role: "assistant", content: "Arbeitsplan:\n" + plan }
-          ], 2200);
-          const verification = await askAI(env, [
-            { role: "system", content: "Du bist der unabhängige Qualitätsprüfer von NEXUS. Prüfe die Antwort auf Widersprüche, unbelegte Behauptungen, ausgelassene Anforderungen und klare Grenzen. Gib eine kurze Prüfung aus. Erfinde keine Tests." },
-            { role: "user", content: "Auftrag:\n" + message + "\n\nPlan:\n" + plan + "\n\nAntwort:\n" + answer }
-          ], 700);
-          const combined = `ARBEITSPLAN\n${plan}\n\nERGEBNIS\n${answer}\n\nQUALITÄTSCHECK\n${verification}`;
-          await saveMessage(env, conversationId, "assistant", combined);
-          await env.DB.prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title = ?")
-            .bind(message.slice(0, 54), new Date().toISOString(), conversationId, "Neuer Chat").run();
-          return json({ mode: "agent", plan, answer, verification });
+          const memoryResult = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
+          const plan = await createPlan(env, message, memoryResult.results || []);
+          const runId = crypto.randomUUID(), now = new Date().toISOString();
+          const approvalRequired = needsApproval(plan);
+          await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(runId, conversationId, message, plan.goal, JSON.stringify(plan), approvalRequired ? "awaiting_approval" : "running", plan.summary, now, now).run();
+          if (approvalRequired) {
+            const planText = plan.steps.map((step, i) => (i + 1) + ". " + step.tool + " — " + (step.reason || step.id)).join("\\n");
+            return json({ mode: "agent", runId, requiresApproval: true, plan: plan.summary + (planText ? "\\n" + planText : ""), answer: "NEXUS wartet auf deine Freigabe. Noch wurde nichts ausgeführt.", verification: "Vor Ausführung angehalten." });
+          }
+          if (plan.steps.length === 0) {
+            const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT + "\\nBeantworte die Aufgabe direkt. Du hast keine Browser-Tools ausgeführt." }, ...context], 1800);
+            await env.DB.prepare("UPDATE agent_runs SET status = 'completed', result_json = ?, summary = ?, updated_at = ? WHERE id = ?")
+              .bind(JSON.stringify({ answer }), "Textantwort; keine Browser-Aktion erforderlich.", new Date().toISOString(), runId).run();
+            await saveMessage(env, conversationId, "assistant", answer);
+            return json({ mode: "agent", runId, plan: plan.summary || "Keine Browser-Schritte erforderlich.", answer, verification: "Keine externen Aktionen ausgeführt." });
+          }
+          const result = await runBrowserPlan(env, plan, async event => {
+            await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
+          });
+          const status = result.status === "completed" ? "completed" : "failed";
+          await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
+            .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+          const answer = status === "completed" ? JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
+          await saveMessage(env, conversationId, "assistant", answer);
+          return json({ mode: "agent", runId, plan: plan.summary, answer, verification: status === "completed" ? "Browser-Schritte abgeschlossen; Ergebnisse bitte prüfen." : "Ausführung fehlgeschlagen.", result });
         }
 
         const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT }, ...context], 1800);
