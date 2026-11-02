@@ -146,3 +146,8 @@ export async function fetchTikTokAnalytics(env) {
   const url = API + "/v2/video/list/?fields=" + encodeURIComponent(fields);
   return tiktokRequest(url, accessToken, { max_count: 20 });
 }
+
+export async function fetchTikTokPublishStatus(env, publishId) {
+  const { accessToken } = await getTikTokAccount(env);
+  return tiktokRequest(API + "/v2/post/publish/status/fetch/", accessToken, { publish_id: publishId });
+}
