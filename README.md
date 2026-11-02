@@ -7,7 +7,7 @@ NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers 
 - **Chat:** conversational AI with persistent conversation history.
 - **Multi-agent orchestration:** Strategist, Specialist, and Critic agents run in parallel; an Orchestrator synthesizes their reports and records an audit trail.
 - **Durable background jobs:** Cloudflare Workflows run long-running agent tasks outside the lifetime of a single HTTP request. The UI can start a job and poll its status.
-- **Browser agent:** navigate, inspect, extract, click, and fill public HTTP(S) pages using Cloudflare Browser Run / Puppeteer.
+- **Browser agent:** search the public web, navigate, inspect, extract, click, and fill public HTTP(S) pages using Cloudflare Browser Run / Puppeteer.
 - **Human approval gate:** browser clicks and form submissions pause until the user approves them.
 - **Recurring automations:** D1-backed schedules are checked every five minutes. Text-only tasks use the multi-agent crew; browser tasks use the browser runtime and approval gate.
 - **Persistent memory:** explicitly saved facts can be added, listed, used as context, and deleted.
@@ -34,7 +34,7 @@ Run: npm run dev
 
 ## Deployment
 
-The deployment workflow applies schema.sql, uploads secrets using Wrangler's versioned secret commands, and deploys the Worker.
+The deployment workflow applies schema.sql, injects all required secrets atomically into the deployment, deploys the Worker, and smoke-tests the live AI chat endpoint.
 
 Required GitHub Actions secrets:
 - CLOUDFLARE_API_TOKEN
@@ -47,6 +47,7 @@ The Cloudflare account must have Browser Run enabled. Review docs/BROWSER_AGENT_
 
 ## Authenticated API
 
+- GET /health
 - POST /api/login, POST /api/logout
 - POST /api/chat, POST /api/agent
 - POST /api/workflows, GET /api/workflows/:id
