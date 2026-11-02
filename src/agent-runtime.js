@@ -9,10 +9,29 @@ export function validateBrowserUrl(value) {
   let url;
   try { url = new URL(String(value)); } catch { throw new Error("Ungültige URL."); }
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Nur HTTP- und HTTPS-Seiten sind erlaubt.");
+  if (url.username || url.password) throw new Error("URLs mit eingebetteten Zugangsdaten sind gesperrt.");
   const host = url.hostname.toLowerCase().replace(/\.$/, "");
+  const octets = host.split(".").map(Number);
+  const isIpv4 = octets.length === 4 && octets.every(part => Number.isInteger(part) && part >= 0 && part <= 255);
+  const [a, b, c] = octets;
+  const blockedIpv4 = isIpv4 && (
+    a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && (b === 0 || b === 168)) ||
+    (a === 198 && (b === 18 || b === 19 || b === 51)) ||
+    (a === 203 && b === 0 && c === 113)
+  );
+  const blockedIpv6 = host.startsWith("[") && (
+    host === "[::]" || host === "[::1]" || host.startsWith("[fc") ||
+    host.startsWith("[fd") || host.startsWith("[fe8") ||
+    host.startsWith("[fe9") || host.startsWith("[fea") ||
+    host.startsWith("[feb") || host.startsWith("[ff") ||
+    host.startsWith("[::ffff") || host.startsWith("[2001:db8:")
+  );
   if (BLOCKED_HOSTS.has(host) || host.endsWith(".localhost") || host.endsWith(".local") ||
-      /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      host.startsWith("169.254.") || host === "[::1]" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80") || host.startsWith("[::ffff") || host.startsWith("fc") || host.startsWith("fd")) {
+      host.endsWith(".internal") || blockedIpv4 || blockedIpv6) {
     throw new Error("Lokale und private Netzwerkziele sind gesperrt.");
   }
   return url.toString();
