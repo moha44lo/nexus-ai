@@ -19,3 +19,13 @@ test("rejects localhost and private IPv4 destinations", () => {
 test("rejects link-local metadata IPs", () => {
   assert.throws(() => validateBrowserUrl("http://169.254.169.254/latest/meta-data"), /gesperrt/);
 });
+
+test("normalizes shorthand IPv4 loopback and blocks it", () => {
+  assert.throws(() => validateBrowserUrl("http://127.1"), /gesperrt/);
+});
+test("blocks private IPv6 unique-local destinations", () => {
+  assert.throws(() => validateBrowserUrl("http://[fc00::1]/"), /gesperrt/);
+});
+test("blocks private IPv6 link-local destinations", () => {
+  assert.throws(() => validateBrowserUrl("http://[fe80::1]/"), /gesperrt/);
+});
