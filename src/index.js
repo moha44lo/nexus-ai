@@ -560,7 +560,7 @@ export default {
         if (!task) return json({ error: "Aufgabe fehlt." }, 400);
         requireDatabase(env);
         const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
-        const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\\n");
+        const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\n");
         const combinedContext = [context, memoryContext ? "Vom Nutzer gespeicherte Fakten:\\n" + memoryContext : ""].filter(Boolean).join("\\n\\n").slice(0, 12000);
         const runId = crypto.randomUUID(), now = new Date().toISOString();
         await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'queued', ?, ?, ?)")
@@ -622,13 +622,22 @@ export default {
       if (request.method === "GET" && mediaAction) {
         const row = await env.DB.prepare("SELECT video_storage_key FROM social_posts WHERE id = ?").bind(mediaAction[1]).first();
         if (!row?.video_storage_key || !env.SOCIAL_MEDIA) return new Response("Video nicht gefunden.", { status: 404 });
-        const object = await env.SOCIAL_MEDIA.get(row.video_storage_key);
-        if (!object) return new Response("Video nicht gefunden.", { status: 404 });
+        const rangeRequested = request.headers.has("Range");
+        const object = await env.SOCIAL_MEDIA.get(row.video_storage_key, rangeRequested ? { range: request.headers } : undefined);
+        if (!object || !object.body) return new Response("Video nicht gefunden.", { status: 404 });
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set("Cache-Control", "private, no-store");
+        headers.set("Accept-Ranges", "bytes");
         headers.set("Content-Disposition", "inline; filename=\"nexus-" + mediaAction[1] + ".mp4\"");
-        return new Response(object.body, { headers });
+        let status = 200;
+        if (object.range) {
+          const start = object.range.offset || 0;
+          const end = start + object.range.length - 1;
+          headers.set("Content-Range", "bytes " + start + "-" + end + "/" + object.size);
+          status = 206;
+        }
+        return new Response(object.body, { status, headers });
       }
       if (request.method === "GET" && url.pathname === "/api/social/status") {
         const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
@@ -680,7 +689,7 @@ export default {
         const input = normalizeSocialInput(body);
         const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
         const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
-        if (performanceContext) input.account_context = (input.account_context + "\\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\\n" + performanceContext).slice(0, 1200);
+        if (performanceContext) input.account_context = (input.account_context + "\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
         await env.DB.prepare("INSERT INTO social_posts (id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")
