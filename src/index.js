@@ -110,7 +110,27 @@ async function enter(){login.classList.add("hidden");app.style.display="flex";aw
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();$("error").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});$("pin").value="";await enter();}catch(err){$("error").textContent=err.message;}});
 $("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{location.reload();}};
 $("controlToggle").onclick=()=>{$("controlPanel").hidden=!$("controlPanel").hidden;if(!$("controlPanel").hidden)loadControl("runs");};
-async function loadControl(kind){const routes={runs:"/api/agent/runs",skills:"/api/skills",schedules:"/api/schedules",memory:"/api/memory"};const out=$("controlOutput");out.textContent="Lade …";try{const data=await api(routes[kind]);out.textContent=JSON.stringify(data,null,2);}catch(error){out.textContent=error.message;}}
+async function loadControl(kind){
+ const routes={runs:"/api/agent/runs",skills:"/api/skills",schedules:"/api/schedules",memory:"/api/memory"};
+ const out=$("controlOutput");out.textContent="Lade …";
+ try{
+  const data=await api(routes[kind]);out.textContent="";
+  if(kind==="runs"&&Array.isArray(data.runs)){
+   for(const run of data.runs){
+    const row=document.createElement("div");row.style.cssText="padding:8px 0;border-bottom:1px solid #26344b";
+    const title=document.createElement("div");title.textContent=run.status+" · "+(run.task||run.goal||run.id);row.appendChild(title);
+    if(run.status==="awaiting_approval"){
+     for(const approved of [true,false]){
+      const b=document.createElement("button");b.textContent=approved?"Freigeben":"Ablehnen";b.style.margin="7px 7px 0 0";
+      b.onclick=async()=>{b.disabled=true;try{const result=await api("/api/agent/approve",{method:"POST",body:JSON.stringify({runId:run.id,approved})});title.textContent=result.status||"Erledigt";}catch(error){title.textContent=error.message;}};
+      row.appendChild(b);
+     }
+    }
+    out.appendChild(row);
+   }
+  }else out.textContent=JSON.stringify(data,null,2);
+ }catch(error){out.textContent=error.message;}
+}
 document.querySelectorAll("[data-panel]").forEach(button=>button.addEventListener("click",()=>loadControl(button.dataset.panel)));
 $("saveMemory").onclick=async()=>{const fact=prompt("Was soll NEXUS dauerhaft speichern?");if(!fact)return;try{const data=await api("/api/memory",{method:"POST",body:JSON.stringify({fact})});$("controlOutput").textContent=JSON.stringify(data,null,2);}catch(error){$("controlOutput").textContent=error.message;}};
 $("createSchedule").onclick=async()=>{const name=prompt("Name der Automation?");if(!name)return;const task=prompt("Welche Aufgabe soll NEXUS wiederholen?");if(!task)return;const intervalMinutes=Number(prompt("Intervall in Minuten? (mindestens 5)","60"));if(!Number.isInteger(intervalMinutes)||intervalMinutes<5||intervalMinutes>10080){$("controlOutput").textContent="Intervall muss 5 bis 10080 Minuten sein.";return;}try{const data=await api("/api/schedules",{method:"POST",body:JSON.stringify({name,task,intervalMinutes})});$("controlOutput").textContent=JSON.stringify(data,null,2);}catch(error){$("controlOutput").textContent=error.message;}};
