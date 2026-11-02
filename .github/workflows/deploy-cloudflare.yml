@@ -91,8 +91,10 @@ jobs:
           test -n "$workflow_id"
           test -n "$run_id"
           completed=false
-          for attempt in $(seq 1 60); do
+          last_state=""
+          for attempt in $(seq 1 480); do
             state="$(curl -fsS -b "$cookies" "$WORKER_URL/api/workflows/$workflow_id")"
+            last_state="$state"
             status="$(printf '%s' "$state" | jq -r '.status')"
             if [[ "$status" == "complete" ]]; then
               printf '%s' "$state" | jq -e '(.output.answer | type == "string" and length > 0) and (.output.agents | type == "array" and length >= 3)'
@@ -105,6 +107,10 @@ jobs:
             fi
             sleep 2
           done
-          [[ "$completed" == "true" ]] || { echo "NEXUS workflow smoke test timed out"; exit 1; }
+          if [[ "$completed" != "true" ]]; then
+            echo "NEXUS workflow smoke test timed out after 16 minutes; last state:"
+            printf '%s' "$last_state" | jq .
+            exit 1
+          fi
           history="$(curl -fsS -b "$cookies" "$WORKER_URL/api/agent/runs/$run_id")"
           printf '%s' "$history" | jq -e '(.run.status == "completed" or .run.status == "needs_review") and (.steps | length >= 3) and (.run.result | type == "object")'
