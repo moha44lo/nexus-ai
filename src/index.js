@@ -694,7 +694,7 @@ export default {
         const body = await request.json();
         const input = normalizeSocialInput(body);
         const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
-        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
+        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\n");
         if (performanceContext) input.account_context = (input.account_context + "\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
