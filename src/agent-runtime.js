@@ -42,7 +42,8 @@ export async function createPlan(env, task, memory = []) {
     if (!allowed.has(step.tool)) throw new Error("Nicht erlaubtes Tool im Plan: " + String(step.tool));
     if (!step.id) step.id = "s" + (index + 1);
     if (!step.args || typeof step.args !== "object" || Array.isArray(step.args)) step.args = {};
-    if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);\n    if (step.tool === "browser.search" && !String(step.args.query || "").trim()) throw new Error("Suchanfrage fehlt.");
+    if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);
+    if (step.tool === "browser.search" && !String(step.args.query || "").trim()) throw new Error("Suchanfrage fehlt.");
     if (["browser.click", "browser.fill"].includes(step.tool) && !step.args.selector) throw new Error("CSS-Selektor fehlt.");
     if (step.tool === "browser.fill" && typeof step.args.value !== "string") throw new Error("Eingabewert fehlt.");
   }
@@ -50,7 +51,8 @@ export async function createPlan(env, task, memory = []) {
   for (const step of plan.steps) {
     if (stepIds.has(step.id)) throw new Error("Doppelte Schritt-ID im Agentenplan.");
     stepIds.add(step.id);
-    if (step.args.url) step.args.url = validateBrowserUrl(step.args.url);\n    if (step.tool === "browser.search") step.args.query = String(step.args.query).trim().slice(0, 500);
+    if (step.args.url) step.args.url = validateBrowserUrl(step.args.url);
+    if (step.tool === "browser.search") step.args.query = String(step.args.query).trim().slice(0, 500);
     if (step.reason) step.reason = String(step.reason).slice(0, 300);
   }
   const normalized = { goal: String(plan.goal || task).slice(0, 300), summary: String(plan.summary || "").slice(0, 1200), steps: plan.steps };
