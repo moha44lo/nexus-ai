@@ -43,7 +43,7 @@ The Cloudflare account must have Browser Run enabled and the `BROWSER` binding c
 - `GET/POST /api/schedules`, `PATCH/DELETE /api/schedules/:id`
 - `GET /api/agent/runs`, `GET /api/agent/runs/:id`
 - `POST /api/agent/approve`
-- MCP: `POST /mcp` with a bearer token
+- MCP: `POST /mcp` with a bearer token (`nexus.agent.plan` includes independent review and does not execute actions)
 
 ## Important boundaries
 
