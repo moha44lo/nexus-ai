@@ -5,14 +5,13 @@ The browser agent uses Cloudflare Browser Run through the Workers browser bindin
 ## Required one-time setup
 
 1. Use a Cloudflare account with Browser Run / Browser Rendering enabled for the account.
-2. Keep the `browser.binding = "BROWSER"` declaration in `wrangler.jsonc`.
-3. Install dependencies with `npm install`.
-4. Apply the expanded D1 schema to the existing database:
+2. Create a strong MCP bearer token (at least 32 characters) and set it as the Worker secret `NEXUS_MCP_TOKEN`.
+3. Set the Worker secrets `NEXUS_PIN` and `NEXUS_SESSION_SECRET` (at least 32 characters).
+4. Keep the `browser.binding = "BROWSER"` declaration in `wrangler.jsonc`.
+5. Install dependencies with `npm install`.
+6. Apply the expanded D1 schema to the existing database:
    `npx wrangler d1 execute nexus --remote --file=./schema.sql`
-5. Confirm the existing Worker secrets are set:
-   - `NEXUS_PIN`
-   - `NEXUS_SESSION_SECRET` (at least 32 characters)
-6. Deploy from this branch only after the migration and bindings are configured:
+7. Deploy from this branch only after the migration and bindings are configured:
    `npx wrangler deploy`
 
 ## What the current browser runtime can do
@@ -43,3 +42,29 @@ The browser agent uses Cloudflare Browser Run through the Workers browser bindin
 - `POST /api/agent/approve` — approve or reject a pending browser plan.
 
 The existing authenticated API session is required for these endpoints.
+
+
+## MCP server
+
+NEXUS exposes a stateless MCP endpoint at `/mcp` using protocol version `2025-03-26`.
+Authenticate with `Authorization: Bearer <NEXUS_MCP_TOKEN>`. Configure the token as a Cloudflare Worker secret; never place it in frontend code or commit it.
+
+Available MCP tools:
+- `nexus.memory.list` and `nexus.memory.save`
+- `nexus.skills.list`
+- `nexus.schedules.list` and `nexus.schedules.create`
+- `nexus.runs.list`
+
+Example local configuration (replace the URL and token locally; do not commit credentials):
+```json
+{
+  "mcpServers": {
+    "nexus": {
+      "url": "https://YOUR-WORKER-DOMAIN/mcp",
+      "headers": { "Authorization": "Bearer YOUR_NEXUS_MCP_TOKEN" }
+    }
+  }
+}
+```
+
+MCP is stateless and currently exposes these tools only. It does not yet expose a local Chrome session, arbitrary shell access, email, calendar, or third-party MCP server aggregation.
