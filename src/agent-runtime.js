@@ -8,10 +8,10 @@ export function validateBrowserUrl(value) {
   let url;
   try { url = new URL(String(value)); } catch { throw new Error("Ungültige URL."); }
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Nur HTTP- und HTTPS-Seiten sind erlaubt.");
-  const host = url.hostname.toLowerCase().replace(/\\.$/, "");
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
   if (BLOCKED_HOSTS.has(host) || host.endsWith(".localhost") || host.endsWith(".local") ||
       /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      /^169\.254\./.test(host) || host === "[::1]" || /^\\[(?:fc|fd|fe80|::ffff)/i.test(host) || host.startsWith("fc") || host.startsWith("fd")) {
+      /^169\\.254\\./.test(host) || host === "[::1]" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80") || host.startsWith("[::ffff") || host.startsWith("fc") || host.startsWith("fd")) {
     throw new Error("Lokale und private Netzwerkziele sind gesperrt.");
   }
   return url.toString();
