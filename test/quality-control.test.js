@@ -17,7 +17,7 @@ test("detects encoding damage and unfinished endings", () => {
 });
 
 test("detects duplicated words and unusually short complex answers", () => {
-  const issues = inspectAnswer("Das ist ein ein kurzer Text.", "Erstelle eine ausführliche Analyse mit mehreren konkreten Handlungsschritten und Risiken.");
+  const issues = inspectAnswer("Das ist ein ein kurzer Text.", "Erstelle eine ausführliche und umfassende Analyse mit mehreren konkreten Handlungsschritten, Risiken, Gegenmaßnahmen, Prioritäten und nachvollziehbaren Beispielen.");
   assert.ok(issues.some(issue => /wiederholtes Wort/.test(issue)));
   assert.ok(issues.some(issue => /ungewöhnlich kurz/.test(issue)));
 });
