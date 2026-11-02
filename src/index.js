@@ -4,6 +4,7 @@ import { compileSkill } from "./skill-engine.js";
 import { handleMcpRequest } from "./mcp-server.js";
 import { extractWorkersAIText } from "./model-output.js";
 import { runCrew } from "./orchestrator.js";
+import { formatRuntimeError } from "./runtime-errors.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -275,7 +276,7 @@ async function processDueSchedules(env) {
 }
 
 function safeError(error) {
-  return error instanceof Error ? error.message.slice(0, 300) : "Unbekannter Fehler";
+  return formatRuntimeError(error);
 }
 
 export default {
