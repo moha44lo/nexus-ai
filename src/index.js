@@ -247,7 +247,11 @@ export default {
         const task = String(body.task || "").trim().slice(0, 12000);
         const context = String(body.context || "").slice(0, 8000);
         if (!task) return json({ error: "Aufgabe fehlt." }, 400);
-        const instance = await env.NEXUS_CORE.create({ params: { task, context } });
+        requireDatabase(env);
+        const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
+        const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\\n");
+        const combinedContext = [context, memoryContext ? "Vom Nutzer gespeicherte Fakten:\\n" + memoryContext : ""].filter(Boolean).join("\\n\\n").slice(0, 12000);
+        const instance = await env.NEXUS_CORE.create({ params: { task, context: combinedContext } });
         return json({ workflowId: instance.id, status: "queued" }, 202);
       }
       if (request.method === "GET" && url.pathname.startsWith("/api/workflows/")) {
