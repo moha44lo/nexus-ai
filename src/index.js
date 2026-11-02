@@ -464,10 +464,33 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE) } });
+      return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE), socialMedia: Boolean(env.SOCIAL_MEDIA) } });
     }
     if (request.method === "GET" && url.pathname === "/") {
       return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/social/tiktok/callback") {
+      try {
+        requireDatabase(env);
+        await ensureSocialSchema(env);
+        const state = url.searchParams.get("state") || "";
+        const code = url.searchParams.get("code") || "";
+        const saved = await env.DB.prepare("SELECT state, expires_at FROM social_oauth_states WHERE state = ?").bind(state).first();
+        await env.DB.prepare("DELETE FROM social_oauth_states WHERE state = ?").bind(state).run();
+        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code) return new Response("TikTok OAuth state ungültig oder abgelaufen.", { status: 400 });
+        if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return new Response("TikTok-App-Schlüssel fehlen.", { status: 503 });
+        const form = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, client_secret: env.TIKTOK_CLIENT_SECRET, code, grant_type: "authorization_code", redirect_uri: await tiktokRedirectUri(request, env) });
+        const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.error || !result.access_token || !result.open_id) throw new Error("TikTok OAuth fehlgeschlagen: " + (result.error_description || result.error || response.status));
+        const access = await encryptTikTokToken(result.access_token, env.NEXUS_SESSION_SECRET);
+        const refresh = await encryptTikTokToken(result.refresh_token, env.NEXUS_SESSION_SECRET);
+        const now = Date.now(), stamp = new Date(now).toISOString();
+        await env.DB.prepare("INSERT INTO social_accounts (platform, open_id, access_token_encrypted, refresh_token_encrypted, access_expires_at, refresh_expires_at, scope, connected_at, updated_at) VALUES ('tiktok', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET open_id = excluded.open_id, access_token_encrypted = excluded.access_token_encrypted, refresh_token_encrypted = excluded.refresh_token_encrypted, access_expires_at = excluded.access_expires_at, refresh_expires_at = excluded.refresh_expires_at, scope = excluded.scope, connected_at = excluded.connected_at, updated_at = excluded.updated_at")
+          .bind(result.open_id, access, refresh, new Date(now + Number(result.expires_in || 86400) * 1000).toISOString(), new Date(now + Number(result.refresh_expires_in || 31536000) * 1000).toISOString(), result.scope || "", stamp, stamp).run();
+        return Response.redirect(new URL("/?social=tiktok-connected", request.url).toString(), 302);
+      } catch (error) { return new Response("TikTok-Verbindung fehlgeschlagen: " + safeError(error), { status: 400 }); }
     }
 
     if (request.method === "GET" && url.pathname === "/api/session") {
@@ -538,6 +561,49 @@ export default {
       requireDatabase(env);
       if (url.pathname.startsWith("/api/social/")) await ensureSocialSchema(env);
 
+      if (request.method === "GET" && url.pathname === "/api/social/tiktok/connect") {
+        if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return json({ error: "TIKTOK_CLIENT_KEY und TIKTOK_CLIENT_SECRET fehlen in Cloudflare Secrets." }, 503);
+        const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+        const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        await env.DB.prepare("DELETE FROM social_oauth_states WHERE expires_at <= ?").bind(new Date().toISOString()).run();
+        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at) VALUES (?, ?, ?)").bind(state, expires, new Date().toISOString()).run();
+        const authorize = new URL("https://www.tiktok.com/v2/auth/authorize/");
+        authorize.search = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, response_type: "code", scope: "user.info.basic,video.publish,video.list", redirect_uri: await tiktokRedirectUri(request, env), state }).toString();
+        return Response.redirect(authorize.toString(), 302);
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/tiktok/disconnect") {
+        await env.DB.prepare("DELETE FROM social_accounts WHERE platform = 'tiktok'").run();
+        return json({ ok: true });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/tiktok/creator") {
+        const creator = await getTikTokCreatorInfo(env);
+        return json({ creator });
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/analytics/refresh") {
+        const data = await fetchTikTokAnalytics(env);
+        const videos = data.videos || [], now = new Date().toISOString();
+        for (const video of videos) {
+          await env.DB.prepare("INSERT INTO social_analytics (video_id, title, views, likes, comments, shares, video_created_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, views = excluded.views, likes = excluded.likes, comments = excluded.comments, shares = excluded.shares, video_created_at = excluded.video_created_at, fetched_at = excluded.fetched_at")
+            .bind(String(video.id), video.title || video.video_description || "", Number(video.view_count || 0), Number(video.like_count || 0), Number(video.comment_count || 0), Number(video.share_count || 0), video.create_time ? new Date(Number(video.create_time) * 1000).toISOString() : null, now).run();
+        }
+        return json({ synced: videos.length, cursor: data.cursor || null, has_more: Boolean(data.has_more) });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/analytics") {
+        const result = await env.DB.prepare("SELECT video_id, title, views, likes, comments, shares, video_created_at, fetched_at FROM social_analytics ORDER BY views DESC LIMIT 30").all();
+        return json({ videos: result.results || [] });
+      }
+      const mediaAction = url.pathname.match(/^\/api\/social\/media\/([a-f0-9-]+)$/i);
+      if (request.method === "GET" && mediaAction) {
+        const row = await env.DB.prepare("SELECT video_storage_key FROM social_posts WHERE id = ?").bind(mediaAction[1]).first();
+        if (!row?.video_storage_key || !env.SOCIAL_MEDIA) return new Response("Video nicht gefunden.", { status: 404 });
+        const object = await env.SOCIAL_MEDIA.get(row.video_storage_key);
+        if (!object) return new Response("Video nicht gefunden.", { status: 404 });
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set("Cache-Control", "private, no-store");
+        headers.set("Content-Disposition", "inline; filename=\"nexus-" + mediaAction[1] + ".mp4\"");
+        return new Response(object.body, { headers });
+      }
       if (request.method === "GET" && url.pathname === "/api/social/status") {
         const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
         return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
