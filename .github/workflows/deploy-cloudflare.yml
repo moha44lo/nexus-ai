@@ -93,7 +93,7 @@ jobs:
           NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
         run: |
           set -euo pipefail
-          curl -fsS "$WORKER_URL/health" | jq -e '.ok == true and .bindings.ai == true and .bindings.browser == true and .bindings.database == true and .bindings.workflows == true'
+          curl -fsS "$WORKER_URL/health" | jq -e '.ok == true and .bindings.ai == true and .bindings.browser == true and .bindings.database == true and .bindings.workflows == true and .bindings.socialMedia == true'
           cookies="$(mktemp)"
           trap 'rm -f "$cookies"' EXIT
           curl -fsS -c "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg pin "$NEXUS_PIN" '{pin:$pin}')" "$WORKER_URL/api/login" | jq -e '.ok == true'
