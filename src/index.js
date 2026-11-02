@@ -289,9 +289,12 @@ async function ensureSocialSchema(env) {
     platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
     access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
     access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
-    privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT,
+    privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT, analytics_synced_at TEXT,
     connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
   )\`).run();
+  const accountColumns = await env.DB.prepare("PRAGMA table_info(social_accounts)").all();
+  const accountExisting = new Set((accountColumns.results || []).map(column => column.name));
+  if (!accountExisting.has("analytics_synced_at")) await env.DB.prepare("ALTER TABLE social_accounts ADD COLUMN analytics_synced_at TEXT").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
   await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_analytics (
     video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
@@ -332,6 +335,20 @@ async function processSocialQueue(env) {
         .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
     }
   }
+}
+async function processSocialAnalytics(env) {
+  requireDatabase(env);
+  await ensureSocialSchema(env);
+  const account = await env.DB.prepare("SELECT scope, analytics_synced_at FROM social_accounts WHERE platform = 'tiktok'").first();
+  if (!account || !String(account.scope || "").includes("video.list")) return;
+  if (account.analytics_synced_at && Date.now() - Date.parse(account.analytics_synced_at) < 12 * 60 * 60 * 1000) return;
+  const data = await fetchTikTokAnalytics(env);
+  const now = new Date().toISOString();
+  for (const video of data.videos || []) {
+    await env.DB.prepare("INSERT INTO social_analytics (video_id, title, views, likes, comments, shares, video_created_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, views = excluded.views, likes = excluded.likes, comments = excluded.comments, shares = excluded.shares, video_created_at = excluded.video_created_at, fetched_at = excluded.fetched_at")
+      .bind(String(video.id), video.title || video.video_description || "", Number(video.view_count || 0), Number(video.like_count || 0), Number(video.comment_count || 0), Number(video.share_count || 0), video.create_time ? new Date(Number(video.create_time) * 1000).toISOString() : null, now).run();
+  }
+  await env.DB.prepare("UPDATE social_accounts SET analytics_synced_at = ?, updated_at = ? WHERE platform = 'tiktok'").bind(now, now).run();
 }
 async function tiktokRedirectUri(request, env) {
   return env.TIKTOK_REDIRECT_URI || new URL("/api/social/tiktok/callback", request.url).toString();
@@ -588,6 +605,7 @@ export default {
           await env.DB.prepare("INSERT INTO social_analytics (video_id, title, views, likes, comments, shares, video_created_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, views = excluded.views, likes = excluded.likes, comments = excluded.comments, shares = excluded.shares, video_created_at = excluded.video_created_at, fetched_at = excluded.fetched_at")
             .bind(String(video.id), video.title || video.video_description || "", Number(video.view_count || 0), Number(video.like_count || 0), Number(video.comment_count || 0), Number(video.share_count || 0), video.create_time ? new Date(Number(video.create_time) * 1000).toISOString() : null, now).run();
         }
+        await env.DB.prepare("UPDATE social_accounts SET analytics_synced_at = ?, updated_at = ? WHERE platform = 'tiktok'").bind(now, now).run();
         return json({ synced: videos.length, cursor: data.cursor || null, has_more: Boolean(data.has_more) });
       }
       if (request.method === "GET" && url.pathname === "/api/social/analytics") {
@@ -932,6 +950,8 @@ export default {
     }
   },
   scheduled(controller, env, ctx) {
-    ctx.waitUntil(processDueSchedules(env));
+    ctx.waitUntil(processDueSchedules(env).catch(error => console.error("NEXUS schedules:", safeError(error))));
+    ctx.waitUntil(processSocialQueue(env).catch(error => console.error("NEXUS social queue:", safeError(error))));
+    ctx.waitUntil(processSocialAnalytics(env).catch(error => console.error("NEXUS social analytics:", safeError(error))));
   }
 };
