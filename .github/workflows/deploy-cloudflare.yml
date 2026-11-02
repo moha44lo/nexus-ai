@@ -1,0 +1,109 @@
+name: Deploy NEXUS to Cloudflare
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/nexus-autonomy-foundation
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-cloudflare-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run check
+      - run: npm test
+      - name: Check required deployment secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
+          NEXUS_SESSION_SECRET: ${{ secrets.NEXUS_SESSION_SECRET }}
+          NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID NEXUS_PIN NEXUS_SESSION_SECRET NEXUS_MCP_TOKEN; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          for name in NEXUS_SESSION_SECRET NEXUS_MCP_TOKEN; do
+            value="${!name}"
+            if [[ ${#value} -lt 32 ]]; then
+              echo "::error::$name must contain at least 32 characters"
+              exit 1
+            fi
+          done
+      - name: Apply D1 schema
+        run: npx wrangler d1 execute nexus --remote --file=./schema.sql
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy Worker with secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
+          NEXUS_SESSION_SECRET: ${{ secrets.NEXUS_SESSION_SECRET }}
+          NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
+        run: |
+          set -euo pipefail
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          jq -n --arg pin "$NEXUS_PIN" --arg session "$NEXUS_SESSION_SECRET" --arg mcp "$NEXUS_MCP_TOKEN" '{NEXUS_LOGIN_PIN:$pin,NEXUS_SESSION_SECRET:$session,NEXUS_MCP_TOKEN:$mcp}' > "$secrets_file"
+          npx wrangler deploy --secrets-file "$secrets_file"
+      - name: Smoke test live chat
+        shell: bash
+        env:
+          WORKER_URL: https://nexus-ai.moha-safdari6.workers.dev
+          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
+        run: |
+          set -euo pipefail
+          curl -fsS "$WORKER_URL/health" | jq -e '.ok == true and .bindings.ai == true and .bindings.browser == true and .bindings.database == true and .bindings.workflows == true'
+          cookies="$(mktemp)"
+          trap 'rm -f "$cookies"' EXIT
+          curl -fsS -c "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg pin "$NEXUS_PIN" '{pin:$pin}')" "$WORKER_URL/api/login" | jq -e '.ok == true'
+          conversation="$(curl -fsS -b "$cookies" -H 'Content-Type: application/json' -d '{}' "$WORKER_URL/api/conversations")"
+          conversation_id="$(printf '%s' "$conversation" | jq -r '.conversation.id')"
+          test -n "$conversation_id"
+          reply="$(curl --max-time 90 -fsS -b "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg id "$conversation_id" '{message:"Antworte exakt mit NEXUS_OK",conversationId:$id}')" "$WORKER_URL/api/chat")"
+          printf '%s' "$reply" | jq -e '.answer | type == "string" and length > 0'
+          workflow="$(curl -fsS -b "$cookies" -H 'Content-Type: application/json' -d '{"task":"Erkläre in einem Satz, warum 2 plus 2 gleich 4 ist."}' "$WORKER_URL/api/workflows")"
+          workflow_id="$(printf '%s' "$workflow" | jq -r '.workflowId')"
+          run_id="$(printf '%s' "$workflow" | jq -r '.runId')"
+          test -n "$workflow_id"
+          test -n "$run_id"
+          completed=false
+          for attempt in $(seq 1 60); do
+            state="$(curl -fsS -b "$cookies" "$WORKER_URL/api/workflows/$workflow_id")"
+            status="$(printf '%s' "$state" | jq -r '.status')"
+            if [[ "$status" == "complete" ]]; then
+              printf '%s' "$state" | jq -e '(.output.answer | type == "string" and length > 0) and (.output.agents | type == "array" and length >= 3)'
+              completed=true
+              break
+            fi
+            if [[ "$status" == "errored" || "$status" == "terminated" ]]; then
+              printf '%s' "$state" | jq .
+              exit 1
+            fi
+            sleep 2
+          done
+          [[ "$completed" == "true" ]] || { echo "NEXUS workflow smoke test timed out"; exit 1; }
+          history="$(curl -fsS -b "$cookies" "$WORKER_URL/api/agent/runs/$run_id")"
+          printf '%s' "$history" | jq -e '(.run.status == "completed" or .run.status == "needs_review") and (.steps | length >= 3) and (.run.result | type == "object")'

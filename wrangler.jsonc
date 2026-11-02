@@ -1,22 +1,19 @@
 {
   "name": "nexus-ai",
   "main": "src/index.js",
-  "compatibility_date": "2026-11-01",
-  "ai": {
-    "binding": "AI"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "nexus",
-      "database_id": "8c725381-e48d-414e-acd8-df5b3f82d5b5"
-    }
-  ],
-  "workflows": [
-    {
-      "name": "nexus-core",
-      "binding": "NEXUS_CORE",
-      "class_name": "NEXUSWorkflow"
-    }
-  ]
+  "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI" },
+  "browser": { "binding": "BROWSER" },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "nexus",
+    "database_id": "8c725381-e48d-414e-acd8-df5b3f82d5b5"
+  }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "workflows": [{
+    "name": "nexus-core",
+    "binding": "NEXUS_CORE",
+    "class_name": "NEXUSWorkflow"
+  }]
 }
