@@ -102,7 +102,7 @@ const PAGE = String.raw`<!doctype html>
 let conversationId=null,mode="chat",busy=false,currentView="home";
 const $=id=>document.getElementById(id);
 const chat=$("chat");
-async function api(path,options={}){const response=await fetch(path,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
+async function api(path,options={}){const response=await fetch(path,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
 function toast(message){const el=$("toast");el.textContent=message;el.classList.remove("hidden");setTimeout(()=>el.classList.add("hidden"),2600);}
 function bubble(text,who=""){const el=document.createElement("div");el.className="bubble "+who;el.textContent=text;chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return el;}
 function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
@@ -131,7 +131,7 @@ document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLower
 
 async function createConversation(){const d=await api("/api/conversations",{method:"POST",body:"{}"});conversationId=d.conversation.id;chat.innerHTML="";bubble("Neue Aufgabe gestartet. NEXUS ist bereit.","system");}
 async function openConversation(id){conversationId=id;chat.innerHTML="";const d=await api("/api/history?conversationId="+encodeURIComponent(id));for(const m of d.messages||[])bubble(m.content,m.role==="user"?"user":"");}
-async function enter(){ $("loginView").classList.add("hidden");$("app").classList.remove("hidden");const d=await api("/api/conversations");if(d.conversations?.length)await openConversation(d.conversations[0].id);else await createConversation();await Promise.all([refreshOverview(),refreshHealth()]);}
+async function enter(){const d=await api("/api/conversations");$("loginView").classList.add("hidden");$("app").classList.remove("hidden");if(d.conversations?.length)await openConversation(d.conversations[0].id);else await createConversation();await Promise.all([refreshOverview(),refreshHealth()]);}
 $("loginForm").onsubmit=async e=>{e.preventDefault();$("loginError").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});$("pin").value="";await enter();}catch(err){$("loginError").textContent=err.message;}};
 $("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{location.reload();}};
 $("newChat").onclick=()=>createConversation().catch(e=>toast(e.message));$("newChatTop").onclick=()=>createConversation().catch(e=>toast(e.message));
@@ -151,6 +151,8 @@ async function loadMemory(){try{const d=await api("/api/memory");const host=$("m
 $("scheduleForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/schedules",{method:"POST",body:JSON.stringify({name:$("scheduleName").value,task:$("scheduleTask").value,intervalMinutes:Number($("scheduleInterval").value)})});$("scheduleForm").reset();toast("Automation gespeichert.");loadSchedules();refreshOverview();}catch(err){toast(err.message);}};
 $("refreshSchedules").onclick=loadSchedules;$("refreshRuns").onclick=loadRuns;
 $("addMemory").onclick=async()=>{const fact=prompt("Was soll NEXUS dauerhaft speichern?");if(!fact)return;try{await api("/api/memory",{method:"POST",body:JSON.stringify({fact})});toast("Fakt gespeichert.");loadMemory();refreshOverview();}catch(e){toast(e.message);}};
+async function restoreSession(){try{const state=await api("/api/session");if(state.authenticated)await enter();}catch(error){console.warn("NEXUS session restore failed:",error);}}
+restoreSession();
 </script></body></html>`;
 
 
@@ -287,6 +289,10 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/") {
       return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/session") {
+      return json({ authenticated: await validSession(request, env) });
     }
 
     if (request.method === "POST" && url.pathname === "/api/login") {
