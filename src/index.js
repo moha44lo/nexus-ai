@@ -313,6 +313,13 @@ export default {
         return json({ ok: true });
       }
 
+      if (request.method === "GET" && url.pathname.startsWith("/api/agent/runs/")) {
+        const runId = url.pathname.split("/").pop();
+        const run = await env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(runId).first();
+        if (!run) return json({ error: "Agent-Lauf nicht gefunden." }, 404);
+        const steps = await env.DB.prepare("SELECT step_id, tool, status, detail_json, created_at FROM agent_run_steps WHERE run_id = ? ORDER BY created_at ASC").bind(runId).all();
+        return json({ run: { ...run, plan: JSON.parse(run.plan_json || "{}"), result: run.result_json ? JSON.parse(run.result_json) : null }, steps: steps.results || [] });
+      }
       if (request.method === "GET" && url.pathname === "/api/agent/runs") {
         const result = await env.DB.prepare("SELECT id, task, goal, status, summary, error, created_at, updated_at FROM agent_runs ORDER BY created_at DESC LIMIT 50").all();
         return json({ runs: result.results || [] });
