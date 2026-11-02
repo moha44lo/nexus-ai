@@ -310,6 +310,9 @@ async function processSocialQueue(env) {
   requireDatabase(env);
   await ensureSocialSchema(env);
   const now = new Date().toISOString();
+  const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await env.DB.prepare("UPDATE social_posts SET publish_status = NULL, updated_at = ? WHERE platform = 'tiktok' AND status = 'queued' AND provider_post_id IS NULL AND publish_status = 'STARTING' AND updated_at <= ? AND (scheduled_for IS NULL OR scheduled_for <= ?)")
+    .bind(now, stale, now).run();
   const due = await env.DB.prepare("SELECT * FROM social_posts WHERE platform = 'tiktok' AND status = 'queued' AND provider_post_id IS NULL AND publish_status IS NULL AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 3").bind(now).all();
   for (const post of due.results || []) {
     const claim = await env.DB.prepare("UPDATE social_posts SET publish_status = 'STARTING', updated_at = ? WHERE id = ? AND status = 'queued' AND publish_status IS NULL").bind(now, post.id).run();
@@ -745,8 +748,8 @@ export default {
         }
         if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
         if (post.status !== "approved") return json({ error: "Bitte den Beitrag zuerst redaktionell freigeben." }, 409);
-        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'queued', publish_status = 'STARTING', privacy_level = ?, disable_comment = ?, disable_duet = ?, disable_stitch = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
-          .bind(privacy, body.disable_comment === undefined ? Number(Boolean(post.disable_comment)) : Number(Boolean(body.disable_comment)), body.disable_duet === undefined ? Number(Boolean(post.disable_duet)) : Number(Boolean(body.disable_duet)), body.disable_stitch === undefined ? Number(Boolean(post.disable_stitch)) : Number(Boolean(body.disable_stitch)), new Date().toISOString(), id).run();
+        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'queued', publish_status = 'STARTING', privacy_level = ?, disable_comment = ?, disable_duet = ?, disable_stitch = ?, scheduled_for = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
+          .bind(privacy, body.disable_comment === undefined ? Number(Boolean(post.disable_comment)) : Number(Boolean(body.disable_comment)), body.disable_duet === undefined ? Number(Boolean(post.disable_duet)) : Number(Boolean(body.disable_duet)), body.disable_stitch === undefined ? Number(Boolean(post.disable_stitch)) : Number(Boolean(body.disable_stitch)), new Date().toISOString(), new Date().toISOString(), id).run();
         if (!claim.meta?.changes) return json({ error: "Beitrag wird bereits verarbeitet oder ist nicht freigegeben." }, 409);
         try {
           const result = await publishTikTokVideo(env, { ...post, privacy_level: privacy, disable_comment: body.disable_comment === undefined ? post.disable_comment : Number(Boolean(body.disable_comment)), disable_duet: body.disable_duet === undefined ? post.disable_duet : Number(Boolean(body.disable_duet)), disable_stitch: body.disable_stitch === undefined ? post.disable_stitch : Number(Boolean(body.disable_stitch)) });
