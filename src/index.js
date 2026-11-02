@@ -116,12 +116,12 @@ const commandItems=[
  {label:"Projektplan erstellen",detail:"Ziele, Meilensteine und Risiken",run:()=>{showView("home");$("question").value="Erstelle einen vollständigen Projektplan für: ";$("question").focus();}}
 ];
 let commandIndex=0;
-function renderCommands(query=""){const host=$("commandResults");host.innerHTML="";const found=commandItems.filter(x=>(x.label+" "+x.detail).toLowerCase().includes(query.toLowerCase()));if(!found.length){host.innerHTML='<div class="empty">Keine passende Aktion gefunden.</div>';return;}found.forEach((item,i)=>{const b=document.createElement("button");b.className="command-item";b.innerHTML="<span></span><small></small>";b.firstChild.textContent=item.label;b.lastChild.textContent=item.detail;b.onclick=()=>{closeCommands();item.run();};host.appendChild(b);});commandIndex=0;}
+function renderCommands(query=""){const host=$("commandResults");host.innerHTML="";const found=commandItems.filter(x=>(x.label+" "+x.detail).toLowerCase().includes(query.toLowerCase()));if(!found.length){host.innerHTML='<div class="empty">Keine passende Aktion gefunden.</div>';return;}found.forEach((item,i)=>{const b=document.createElement("button");b.className="command-item"+(i===0?" selected":"");b.innerHTML="<span></span><small></small>";b.firstChild.textContent=item.label;b.lastChild.textContent=item.detail;b.onclick=()=>{closeCommands();item.run();};host.appendChild(b);});commandIndex=0;}
 function openCommands(){if($("app").classList.contains("hidden"))return;$("commandOverlay").classList.remove("hidden");$("commandSearch").value="";renderCommands();$("commandSearch").focus();}
 function closeCommands(){$("commandOverlay").classList.add("hidden");}
 $("commandOpen").onclick=openCommands;
 $("commandOverlay").onclick=e=>{if(e.target===$("commandOverlay"))closeCommands();};
-$("commandSearch").oninput=e=>renderCommands(e.target.value);
+$("commandSearch").oninput=e=>renderCommands(e.target.value);$("commandSearch").onkeydown=e=>{const buttons=[...$("commandResults").querySelectorAll(".command-item")];if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();if(!buttons.length)return;commandIndex=(commandIndex+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length;buttons.forEach((b,i)=>b.classList.toggle("selected",i===commandIndex));buttons[commandIndex].scrollIntoView({block:"nearest"});}if(e.key==="Enter"){e.preventDefault();buttons[commandIndex]?.click();}};
 document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openCommands();}if(e.key==="Escape")closeCommands();});
 
 async function createConversation(){const d=await api("/api/conversations",{method:"POST",body:"{}"});conversationId=d.conversation.id;chat.innerHTML="";bubble("Neue Aufgabe gestartet. NEXUS ist bereit.","system");}
