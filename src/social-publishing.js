@@ -133,11 +133,15 @@ export async function publishTikTokVideo(env, post) {
   }
   const status = await tiktokRequest(API + "/v2/post/publish/status/fetch/", accessToken, { publish_id: init.publish_id });
   const publishStatus = status.status || "PROCESSING_UPLOAD";
+  const publicIds = Array.isArray(status.publicaly_available_post_id) ? status.publicaly_available_post_id : [];
+  const videoId = publicIds.length ? String(publicIds[0]) : null;
+  const username = creator.creator_username || account.username || "";
+  const shareUrl = videoId && username ? "https://www.tiktok.com/@" + username + "/video/" + videoId : null;
   await env.DB.prepare("UPDATE social_posts SET provider_post_id = ?, provider_video_id = ?, publish_status = ?, published_url = ?, published_at = ?, publish_error = NULL, updated_at = ? WHERE id = ?")
-    .bind(init.publish_id, status.publicaly_available_post_id || null, publishStatus,
-      status.share_url || null, publishStatus === "PUBLISH_COMPLETE" ? new Date().toISOString() : null,
+    .bind(init.publish_id, videoId, publishStatus,
+      shareUrl, publishStatus === "PUBLISH_COMPLETE" ? new Date().toISOString() : null,
       new Date().toISOString(), post.id).run();
-  return { publish_id: init.publish_id, status: publishStatus, video_id: status.publicaly_available_post_id || null, share_url: status.share_url || null, creator: { username: creator.creator_username || account.username || "", nickname: creator.creator_nickname || "" } };
+  return { publish_id: init.publish_id, status: publishStatus, video_id: videoId, share_url: shareUrl, creator: { username, nickname: creator.creator_nickname || "" } };
 }
 export async function fetchTikTokAnalytics(env) {
   const { accessToken } = await getTikTokAccount(env);
