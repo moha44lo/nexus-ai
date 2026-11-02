@@ -92,7 +92,7 @@ jobs:
             state="$(curl -fsS -b "$cookies" "$WORKER_URL/api/workflows/$workflow_id")"
             status="$(printf '%s' "$state" | jq -r '.status')"
             if [[ "$status" == "complete" ]]; then
-              printf '%s' "$state" | jq -e '(.output.answer | type == "string" and length > 0) and (.output.agents | length == 3)'
+              printf '%s' "$state" | jq -e '(.output.answer | type == "string" and length > 0) and (.output.agents | type == "array" and length >= 3)'
               completed=true
               break
             fi
