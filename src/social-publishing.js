@@ -105,9 +105,9 @@ export async function publishTikTokVideo(env, post) {
     post_info: {
       title,
       privacy_level: privacy,
-      disable_comment: false,
-      disable_duet: false,
-      disable_stitch: false,
+      disable_comment: post.disable_comment == null ? Boolean(creator.comment_disabled) : Boolean(post.disable_comment),
+      disable_duet: post.disable_duet == null ? Boolean(creator.duet_disabled) : Boolean(post.disable_duet),
+      disable_stitch: post.disable_stitch == null ? Boolean(creator.stitch_disabled) : Boolean(post.disable_stitch),
       is_aigc: true
     },
     source_info: {
