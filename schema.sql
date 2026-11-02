@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS social_accounts (
   platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
   access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
   access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
-  privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT,
+  privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT, analytics_synced_at TEXT,
   connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS social_oauth_states (
