@@ -19,11 +19,11 @@ NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers 
 
 - Generate platform-specific TikTok, Instagram Reels, and YouTube Shorts content packages (hook, script, scene plan, caption, hashtags, CTA, cover text).
 - Includes a dedicated Social Autopilot dashboard, generation form, scene-by-scene preview, copyable caption, and saved content library.
-- Generates vertical 9:16 AI video clips with synchronized audio through Cloudflare AI's `xai/grok-imagine-video` model. Users choose 5, 10, or 15 seconds at 720p; estimated generation cost is shown before starting.
+- Generates a single-shot vertical 9:16 AI video clip with native synchronized audio through Cloudflare AI's `xai/grok-imagine-video` model. Users choose 5, 10, or 15 seconds at 720p; estimated generation cost is shown before starting. It does not yet assemble a complete multi-scene edit with generated narration, subtitles, transitions, and music.
 - Social D1 tables and indexes are initialized automatically on the first authenticated Social API request.
-- TikTok Login Kit OAuth with expiring state, refresh-token rotation, and AES-GCM encrypted access/refresh tokens in D1.
+- TikTok Login Kit OAuth with expiring one-time state bound to the initiating NEXUS session, refresh-token rotation, and AES-GCM encrypted access/refresh tokens in D1.
 - Generated MP4 files are persisted privately in Cloudflare R2 and served only to the authenticated NEXUS session.
-- TikTok Direct Post uses the official `video.publish` API with creator privacy options, AIGC labeling, chunked file upload, publish-status polling, and a five-minute scheduled queue.
+- TikTok Direct Post uses the official `video.publish` API with creator privacy options, AIGC labeling, required chunk-transfer headers, upload-response validation, publish-status polling, and a five-minute scheduled queue. Stuck video-generation locks are recovered after 15 minutes.
 - TikTok `video.list` analytics are synchronized into D1 and shown as views, likes, comments, and shares.
 - Scheduled posts require an explicit user action and stored privacy choice; no draft is posted automatically without that approval.
 - Save drafts in D1 and approve/reject them through authenticated API endpoints.
