@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateBrowserUrl, createPlan, needsApproval, classifyBrowserPage } from "../src/agent-runtime.js";
+import { validateBrowserUrl, createPlan, needsApproval, classifyBrowserPage, searchWithFallback } from "../src/agent-runtime.js";
 
 test("accepts public HTTPS destinations", () => {
   assert.equal(validateBrowserUrl("https://example.com/path"), "https://example.com/path");
@@ -94,4 +94,22 @@ test("reviewer false positives about general research do not block read-only pla
   assert.equal(plan.steps.length, 1);
   assert.equal(plan.review.approved, true);
   assert.match(plan.review.reason, /Fehlalarm/);
+});
+
+test("search falls back to Bing when DuckDuckGo presents a CAPTCHA", async () => {
+  let currentUrl = "";
+  const page = {
+    goto: async url => { currentUrl = url; return { status: () => 200 }; },
+    title: async () => currentUrl.includes("duckduckgo") ? "DuckDuckGo" : "Bing",
+    url: () => currentUrl,
+    evaluate: async (_fn, providerId) => {
+      if (!providerId) return currentUrl.includes("duckduckgo") ? "Select all squares containing a duck" : "Search results";
+      if (providerId === "bing") return [{ title: "Browser reliability", url: "https://example.com/reliability", snippet: "A public result" }];
+      return [];
+    }
+  };
+  const result = await searchWithFallback(page, "browser reliability");
+  assert.equal(result.provider, "bing");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.attempts[0].classification, "captcha");
 });
