@@ -295,7 +295,7 @@ export default {
       return json({ authenticated: await validSession(request, env) });
     }
 
-    if (request.method === "POST" && url.pathname === "/api/login")
+    if (request.method === "POST" && url.pathname === "/api/login") {
       try {
         if (!env.DB) return json({ error: "Login-Schutz ist nicht verfügbar. Datenbankbindung prüfen." }, 503);
         const ipHash = await loginIpHash(request);
