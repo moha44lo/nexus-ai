@@ -660,6 +660,9 @@ export default {
         return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], r2: Boolean(env.SOCIAL_MEDIA), tiktok: { configured: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), connected: Boolean(account), username: account?.username || "", displayName: account?.display_name || "", scope: account?.scope || "", expiresAt: account?.access_expires_at || null }, counts: result.results || [] });
       }
       if (request.method === "GET" && url.pathname === "/api/social/posts") {
+        const staleGeneration = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await env.DB.prepare("UPDATE social_posts SET video_status = 'failed', updated_at = ? WHERE video_status = 'generating' AND updated_at <= ?")
+          .bind(new Date().toISOString(), staleGeneration).run();
         const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, video_storage_key, video_bytes, privacy_level, publish_status, publish_error, provider_post_id, published_url, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
         return json({ posts: (result.results || []).map(row => ({ ...row, video_url: row.video_storage_key ? "/api/social/media/" + row.id : row.video_url, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
       }
