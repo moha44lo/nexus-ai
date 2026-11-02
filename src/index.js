@@ -228,8 +228,8 @@ async function processDueSchedules(env) {
       await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
         .bind(status, JSON.stringify(result), status === "completed" ? "Zeitplan-Aufgabe abgeschlossen." : "Zeitplan-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
     } catch (error) {
-      await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, error, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'failed', ?, ?, ?, ?)")
-        .bind(runId, schedule.task, schedule.name, "{}", "Zeitplan-Ausführung fehlgeschlagen.", safeError(error), now.toISOString(), new Date().toISOString()).run();
+      await env.DB.prepare("UPDATE agent_runs SET status = 'failed', summary = ?, error = ?, updated_at = ? WHERE id = ?")
+        .bind("Zeitplan-Ausführung fehlgeschlagen.", safeError(error), new Date().toISOString(), runId).run();
     }
   }
 }
@@ -470,10 +470,20 @@ export default {
           if (plan.steps.length === 0) {
             const memoryText = (memoryResult.results || []).map(row => "- " + row.fact).join("\\n");
             const historyText = context.map(item => item.role + ": " + item.content).join("\\n").slice(-7000);
-            const crew = await runCrew(env, message, [historyText, memoryText].filter(Boolean).join("\\n\\n"), async event => {
-              await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                .bind(crypto.randomUUID(), runId, event.agent, "agent:" + event.agent, event.status, JSON.stringify(event), new Date().toISOString()).run();
-            });
+            let crew;
+            try {
+              crew = await runCrew(env, message, [historyText, memoryText].filter(Boolean).join("\\n\\n"), async event => {
+                await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                  .bind(crypto.randomUUID(), runId, event.agent, "agent:" + event.agent, event.status, JSON.stringify(event), new Date().toISOString()).run();
+              });
+            } catch (error) {
+              const failure = safeError(error);
+              await env.DB.prepare("UPDATE agent_runs SET status = 'failed', summary = ?, error = ?, updated_at = ? WHERE id = ?")
+                .bind("Multi-Agent-Ausführung fehlgeschlagen.", failure, new Date().toISOString(), runId).run();
+              const answer = "NEXUS konnte die Aufgabe nicht zuverlässig abschließen: " + failure + ". Der Fehler wurde im Aktivitätsprotokoll gespeichert.";
+              await saveMessage(env, conversationId, "assistant", answer);
+              return json({ mode: "agent", runId, status: "failed", answer }, 502);
+            }
             const answer = crew.answer;
             await env.DB.prepare("UPDATE agent_runs SET status = 'completed', result_json = ?, summary = ?, updated_at = ? WHERE id = ?")
               .bind(JSON.stringify(crew), "NEXUS Multi-Agent-Team: " + crew.agents.filter(agent => agent.status === "completed").length + "/3 Agenten abgeschlossen.", new Date().toISOString(), runId).run();
