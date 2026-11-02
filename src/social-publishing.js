@@ -125,7 +125,6 @@ export async function publishTikTokVideo(env, post) {
       method: "PUT",
       headers: {
         "Content-Type": "video/mp4",
-        "Content-Length": String(chunk.byteLength),
         "Content-Range": "bytes " + offset + "-" + end + "/" + bytes.byteLength
       },
       body: chunk
