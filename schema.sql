@@ -74,7 +74,38 @@ CREATE TABLE IF NOT EXISTS social_posts (
   published_at TEXT,
   provider_post_id TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  video_url TEXT,
+  video_status TEXT,
+  video_duration INTEGER,
+  video_prompt TEXT,
+  video_storage_key TEXT,
+  video_bytes INTEGER,
+  privacy_level TEXT DEFAULT 'SELF_ONLY',
+  publish_status TEXT,
+  publish_error TEXT,
+  provider_video_id TEXT,
+  published_url TEXT,
+  approved_at TEXT,
+  disable_comment INTEGER,
+  disable_duet INTEGER,
+  disable_stitch INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_accounts (
+  platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
+  access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
+  access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
+  privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT, analytics_synced_at TEXT,
+  connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS social_oauth_states (
+  state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS social_analytics (
+  video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
+  likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
+  video_created_at TEXT, fetched_at TEXT NOT NULL
+);

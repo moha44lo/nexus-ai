@@ -21,10 +21,21 @@ NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers 
 - Includes a dedicated Social Autopilot dashboard, generation form, scene-by-scene preview, copyable caption, and saved content library.
 - Generates vertical 9:16 AI video clips with synchronized audio through Cloudflare AI's `xai/grok-imagine-video` model. Users choose 5, 10, or 15 seconds at 720p; estimated generation cost is shown before starting.
 - Social D1 tables and indexes are initialized automatically on the first authenticated Social API request.
+- TikTok Login Kit OAuth with expiring state, refresh-token rotation, and AES-GCM encrypted access/refresh tokens in D1.
+- Generated MP4 files are persisted privately in Cloudflare R2 and served only to the authenticated NEXUS session.
+- TikTok Direct Post uses the official `video.publish` API with creator privacy options, AIGC labeling, chunked file upload, publish-status polling, and a five-minute scheduled queue.
+- TikTok `video.list` analytics are synchronized into D1 and shown as views, likes, comments, and shares.
+- Scheduled posts require an explicit user action and stored privacy choice; no draft is posted automatically without that approval.
 - Save drafts in D1 and approve/reject them through authenticated API endpoints.
-- Publishing is deliberately gated: no account credentials are stored in D1 and no post is claimed as published. Official platform OAuth, app review, media hosting/rendering, and publishing permissions must be configured before direct publishing is enabled.
+- TikTok OAuth credentials are encrypted at rest; generated media is stored privately in R2. Direct posting still depends on a registered TikTok Developer app, approved `video.publish` scope, creator authorization, and TikTok's app audit for public visibility. Unaudited clients may be restricted to private posts. Instagram and YouTube direct publishing are not implemented yet.
 
 Authenticated endpoints:
+- GET /api/social/status
+- GET /api/social/tiktok/connect and GET /api/social/tiktok/callback
+- POST /api/social/tiktok/disconnect
+- POST /api/social/analytics/refresh and GET /api/social/analytics
+- POST /api/social/posts/:id/publish, /schedule, /retry, /unschedule; GET /api/social/posts/:id/publish-status
+- GET /api/social/media/:id (authenticated video streaming)
 - GET /api/social/status
 - GET /api/social/posts
 - POST /api/social/generate
@@ -64,7 +75,7 @@ Required GitHub Actions secrets:
 - NEXUS_SESSION_SECRET (32+ characters)
 - NEXUS_MCP_TOKEN (32+ characters)
 
-The Cloudflare account must have Browser Run enabled. Review docs/BROWSER_AGENT_SETUP.md.
+The Cloudflare account must have Browser Run enabled and the deployment token needs Workers, D1, and R2 permissions. The deployment workflow provisions the `nexus-social-media` R2 bucket. In TikTok Developer Portal, register the callback URL `https://nexus-ai.moha-safdari6.workers.dev/api/social/tiktok/callback`, enable Login Kit, Content Posting API with Direct Post configured, and Display API, request `user.info.basic`, `video.publish`, and `video.list`, and submit the app for audit before public posting. Review docs/BROWSER_AGENT_SETUP.md.
 
 ## Authenticated API
 

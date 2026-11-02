@@ -6,6 +6,7 @@ import { extractWorkersAIText } from "./model-output.js";
 import { runCrew } from "./orchestrator.js";
 import { formatRuntimeError } from "./runtime-errors.js";
 import { normalizeSocialInput, generateSocialPackage } from "./social-autopilot.js";
+import { encryptTikTokToken, getTikTokCreatorInfo, publishTikTokVideo, fetchTikTokPublishStatus, fetchTikTokAnalytics } from "./social-publishing.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -50,6 +51,16 @@ const PAGE = String.raw`<!doctype html>
 
 
 .social-video-panel{display:grid;gap:10px;margin-top:14px;padding:14px;border:1px solid #2a4054;background:#0b121c;border-radius:14px}.social-video-panel video{width:100%;max-height:620px;aspect-ratio:9/16;object-fit:contain;background:#05080d;border-radius:12px}.social-video-panel .video-note{font-size:11px;color:var(--muted)}.social-video-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.social-video-actions select{background:#101a26;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}
+
+.social-connect-panel{display:grid;grid-template-columns:1fr auto;gap:15px;align-items:center;margin:12px 0 18px;padding:18px 20px;border:1px solid #294056;border-radius:16px;background:linear-gradient(110deg,#101d2b,#0c141f)}
+.social-connect-panel h3{margin:0 0 4px;font-size:15px}.social-connect-panel p{margin:0;color:var(--muted);font-size:11px}
+.social-connect-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.social-publish-controls{display:grid;grid-template-columns:minmax(150px,1fr) minmax(180px,1.3fr) auto auto;gap:8px;align-items:center;margin-top:12px;padding:12px;border:1px solid #294056;background:#101a26;border-radius:12px}
+.social-publish-controls select,.social-publish-controls input{min-width:0;background:#0b111a;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px}
+.social-analytics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.social-analytics-stat{border:1px solid var(--line);background:#0b111a;padding:14px;border-radius:12px}.social-analytics-stat small{display:block;color:var(--muted);font-size:9px;letter-spacing:.1em}.social-analytics-stat strong{display:block;font-size:23px;margin-top:5px}
+.social-analytics-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(4,70px);gap:8px;padding:10px 0;border-bottom:1px solid var(--line);font-size:11px}
+@media(max-width:700px){.social-connect-panel{grid-template-columns:1fr}.social-connect-actions{justify-content:flex-start}.social-publish-controls{grid-template-columns:1fr 1fr}.social-analytics-grid{grid-template-columns:1fr 1fr}.social-analytics-row{grid-template-columns:minmax(0,1fr) repeat(4,48px);font-size:10px}}
 </style></head>
 <body>
 <div id="loginView" class="login-wrap">
@@ -105,6 +116,10 @@ const PAGE = String.raw`<!doctype html>
   </div>
   <div id="socialView" class="view content">
   <div class="social-hero"><div><div class="social-kicker">NEXUS CREATIVE SYSTEM / 01</div><h1>Social, <em>on autopilot.</em></h1><p>Aus einer Nische wird ein komplettes Short-Form-Content-Briefing: Hook, Skript, Szenen, Voiceover-Text, Caption, Hashtags und Cover-Idee.</p></div><div class="social-live">● CONTENT ENGINE READY</div></div>
+  <section class="social-connect-panel">
+   <div><h3 id="socialTikTokTitle">TikTok-Konto nicht verbunden</h3><p id="socialTikTokHint">Verbinde dein Konto über TikTok OAuth. Tokens werden verschlüsselt gespeichert. Veröffentlichung benötigt deine ausdrückliche Freigabe.</p></div>
+   <div class="social-connect-actions"><button id="socialTikTokConnect" class="primary" type="button">TIKTOK VERBINDEN ↗</button><button id="socialTikTokRefresh" class="secondary" type="button">STATUS AKTUALISIEREN</button><button id="socialTikTokDisconnect" class="secondary" type="button" hidden>TRENNEN</button></div>
+  </section>
   <div class="social-layout">
    <section class="card wide-card"><div class="card-head"><h2>Neue Content-Mission</h2><span class="tag">AI STUDIO</span></div>
     <form id="socialForm" class="social-form">
@@ -126,7 +141,8 @@ const PAGE = String.raw`<!doctype html>
    </section>
    <section class="card wide-card social-output"><div class="card-head"><h2>Creative Output</h2><button id="socialRefresh" class="secondary" type="button">Entwürfe ↻</button></div><div id="socialResult" class="social-empty"><div><strong>Deine nächste Content-Idee beginnt hier.</strong>Gib NEXUS eine Nische und starte die erste Mission.</div></div></section>
   </div>
-  <section class="card wide-card" style="margin-top:16px"><div class="card-head"><h2>Content Library</h2><span id="socialCount" class="tag">0 ENTWÜRFE</span></div><div id="socialPosts" class="list"><div class="empty">Noch keine Entwürfe gespeichert.</div></div></section>
+   <section class="card wide-card" style="margin-top:16px"><div class="card-head"><h2>Performance Intelligence</h2><button id="socialAnalyticsRefresh" class="secondary" type="button">TikTok-Daten synchronisieren ↻</button></div><div id="socialAnalytics" class="list"><div class="empty">Verbinde TikTok und synchronisiere deine Performance-Daten.</div></div></section>
+<section class="card wide-card" style="margin-top:16px"><div class="card-head"><h2>Content Library</h2><span id="socialCount" class="tag">0 ENTWÜRFE</span></div><div id="socialPosts" class="list"><div class="empty">Noch keine Entwürfe gespeichert.</div></div></section>
  </div>
  <div id="automationsView" class="view content"><div class="eyebrow">AUTOMATION ENGINE</div><h1 class="toolbar-title">Automationen</h1><p class="page-sub">Wiederkehrende Aufgaben planen und automatisch ausführen lassen.</p><div class="card wide-card"><div class="card-head"><h2>Neue Automation</h2><span class="tag">Cloud scheduler · 5-Minuten-Prüfung</span></div><form id="scheduleForm"><div class="form-row"><input id="scheduleName" class="field" placeholder="Name der Automation" required><select id="scheduleInterval" class="field"><option value="60">Jede Stunde</option><option value="360">Alle 6 Stunden</option><option value="720">Alle 12 Stunden</option><option value="1440">Täglich</option><option value="10080">Wöchentlich</option></select></div><textarea id="scheduleTask" class="field" rows="3" placeholder="Was soll NEXUS regelmässig erledigen?" required></textarea><button class="primary" type="submit">Automation speichern ＋</button></form></div><div class="card wide-card" style="margin-top:15px"><div class="card-head"><h2>Gespeicherte Automationen</h2><button id="refreshSchedules" class="secondary">Aktualisieren</button></div><div id="scheduleList" class="list"><div class="empty">Lade Automationen …</div></div></div><p class="muted small" style="margin-top:12px">Hinweis: Browser-Klicks und Formulareingaben benötigen weiterhin deine Freigabe. Nicht unterstützte Aktionen werden nicht als erledigt ausgegeben.</p></div>
  <div id="agentsView" class="view content"><div class="eyebrow">NEXUS SWARM INTELLIGENCE</div><h1 class="toolbar-title">Agenten-Schwarm</h1><p class="page-sub">Acht unterschiedliche Modellfamilien. Ein Orchestrator. Ein kontrollierter Verbesserungszyklus. Ein finales Quality Gate.</p><div class="swarm-banner"><div><span class="eyebrow">SELF-IMPROVING CORE</span><h2>8 KI-Modelle. Ein gemeinsamer Intelligence-Core.</h2><p>Acht eigenständige Modell-Backends analysieren dieselbe Aufgabe parallel. NEXUS vereint ihre Erkenntnisse, lässt den Entwurf unabhängig prüfen und verbessert ihn in maximal zwei kontrollierten Runden.</p></div><div class="swarm-orbit"><span>✳</span><i></i><b></b></div></div><div class="grid swarm-grid"><div class="card swarm-agent" data-index="01"><div class="agent-symbol">S</div><h2>Strategist</h2><p class="muted small">Strategie, Ziele, Prioritäten und Abhängigkeiten.</p><span class="tag">PLANUNG</span><small class="model-id">@cf/moonshotai/kimi-k2.6</small></div><div class="card swarm-agent" data-index="02"><div class="agent-symbol">R</div><h2>Researcher</h2><p class="muted small">Fakten, Quellenlage, Belege und offene Fragen.</p><span class="tag">RECHERCHE</span><small class="model-id">@cf/meta/llama-4-scout-17b-16e-instruct</small></div><div class="card swarm-agent" data-index="03"><div class="agent-symbol">F</div><h2>Specialist</h2><p class="muted small">Fachwissen, Lösungswege und Umsetzung.</p><span class="tag">EXPERTISE</span><small class="model-id">@cf/google/gemma-4-26b-a4b-it</small></div><div class="card swarm-agent" data-index="04"><div class="agent-symbol">A</div><h2>Analyst</h2><p class="muted small">Daten, Zahlen, Kosten und Plausibilität.</p><span class="tag">ANALYSE</span><small class="model-id">@cf/openai/gpt-oss-120b</small></div><div class="card swarm-agent" data-index="05"><div class="agent-symbol">C</div><h2>Critic</h2><p class="muted small">Schwachstellen, Widersprüche und Alternativen.</p><span class="tag">KRITIK</span><small class="model-id">@cf/deepseek-ai/deepseek-r1-distill-qwen-32b</small></div><div class="card swarm-agent" data-index="06"><div class="agent-symbol">X</div><h2>Red Team</h2><p class="muted small">Stresstest, Risiken und Gegenargumente.</p><span class="tag">STRESSTEST</span><small class="model-id">@cf/qwen/qwq-32b</small></div><div class="card swarm-agent" data-index="07"><div class="agent-symbol">◇</div><h2>Architect</h2><p class="muted small">Gesamtarchitektur, Reihenfolge und Abhängigkeiten.</p><span class="tag">SYSTEMDESIGN</span><small class="model-id">@cf/nvidia/nemotron-3-120b-a12b</small></div><div class="card swarm-agent" data-index="08"><div class="agent-symbol">↗</div><h2>Optimizer</h2><p class="muted small">Qualität, Effizienz und Wirkung verbessern.</p><span class="tag">OPTIMIERUNG</span><small class="model-id">@cf/zai-org/glm-4.7-flash</small></div><section class="card swarm-architecture"><div class="architecture-head"><div><div class="eyebrow">NEURAL ORCHESTRATION LAYER</div><h2 style="margin:6px 0 0;font-size:18px">Die Engine hinter dem Schwarm</h2><p class="muted small">Die acht Spezialisten liefern parallel. Vier zusätzliche Modell-Aufgaben führen zusammen, prüfen, verbessern und sichern das finale Ergebnis.</p></div><span class="tag">12 MODEL CALL ROLES</span></div><div class="architecture-flow"><div class="engine-node"><span class="node-icon">✳</span><strong>Meta-Orchestrator</strong><small>GLM 5.3 · Berichte zusammenführen</small><code>@cf/zai-org/glm-5.3</code></div><div class="engine-node"><span class="node-icon">⌕</span><strong>Independent Reviewer</strong><small>DeepSeek V4 Flash · Qualitätskritik</small><code>@cf/deepseek-ai/deepseek-v4-flash-0731</code></div><div class="engine-node"><span class="node-icon">⟳</span><strong>Evolution Refiner</strong><small>Kimi K2.6 · gezielte Verbesserung</small><code>@cf/moonshotai/kimi-k2.6</code></div><div class="engine-node"><span class="node-icon">✓</span><strong>Final Quality Gate</strong><small>GPT-OSS 120B · finale Prüfung</small><code>@cf/openai/gpt-oss-120b</code></div></div><div class="swarm-stats"><div class="swarm-stat"><b>08</b><span>Spezialisten-Modelle</span></div><div class="swarm-stat"><b>02</b><span>maximale Evolutionsrunden</span></div><div class="swarm-stat"><b>01</b><span>finales Quality Gate</span></div></div></section><div class="card wide-card evolution-card"><div class="card-head"><h2>⟳ Evolution Loop</h2><span class="tag">MAX. 2 RUNDEN</span></div><div class="evolution-track"><div><b>01</b><strong>Entwurf</strong><small>Agenten vereinen Erkenntnisse</small></div><div><b>02</b><strong>Kritik</strong><small>Richter findet Lücken</small></div><div><b>03</b><strong>Verbesserung</strong><small>Refiner korrigiert gezielt</small></div><div><b>04</b><strong>Quality Gate</strong><small>Finale Prüfung</small></div></div><p class="muted small">Der Kreislauf stoppt bei einem starken Ergebnis oder nach zwei Runden. Fehlende externe Belege werden sichtbar markiert – niemals erfunden.</p></div><div class="card wide-card"><h2>Orchestrator & Execution Engine</h2><p class="muted small">Koordiniert acht Agenten, protokolliert jeden Schritt und führt die Berichte zusammen. Browser-Recherche bleibt separat und wird nur dann als belegt dargestellt, wenn echte Seiteninhalte ausgewertet wurden. Externe Aktionen benötigen weiterhin deine Freigabe.</p></div></div></div>
@@ -143,7 +159,7 @@ const chat=$("chat");
 async function api(path,options={}){const response=await fetch(path,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
 function toast(message){const el=$("toast");el.textContent=message;el.classList.remove("hidden");setTimeout(()=>el.classList.add("hidden"),2600);}
 function bubble(text,who=""){const el=document.createElement("div");el.className="bubble "+who;el.textContent=text;chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return el;}
-function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",social:"Social Autopilot",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="social"){loadSocialPosts();loadSocialStatus();}if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
+function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",social:"Social Autopilot",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="social"){loadSocialPosts();loadSocialStatus();loadSocialAnalytics();}if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>showView(b.dataset.view));
 document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>showView(b.dataset.go));
 
@@ -194,6 +210,7 @@ async function restoreSession(){try{const state=await api("/api/session");if(sta
 
 let socialCurrentPost=null;
 function safeText(tag,text,className){const el=document.createElement(tag);if(className)el.className=className;el.textContent=text||"";return el;}
+let socialCreatorInfo=null;
 function renderSocialResult(post){
  const host=$("socialResult");host.className="social-result";host.innerHTML="";
  const title=safeText("h2",post.title);host.append(title);
@@ -213,13 +230,30 @@ function renderSocialResult(post){
  host.append(videoPanel);
  const actions=document.createElement("div");actions.className="social-actions";
  const copy=document.createElement("button");copy.className="secondary";copy.textContent="Caption kopieren";copy.onclick=async()=>{try{await navigator.clipboard.writeText(post.caption+"\n\n"+(post.hashtags||[]).map(x=>"#"+x).join(" "));toast("Caption kopiert.");}catch{toast("Kopieren nicht möglich – bitte Text markieren.");}};actions.append(copy);
- const approve=document.createElement("button");approve.className="primary";approve.textContent="Entwurf freigeben";approve.onclick=async()=>{if(!post.id)return;approve.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/approve",{method:"POST",body:"{}"});post.status="approved";toast("Redaktionell freigegeben – noch nicht veröffentlicht.");await loadSocialPosts();}catch(e){toast(e.message);approve.disabled=false;}};actions.append(approve);
+
+ const publishControls=document.createElement("div");publishControls.className="social-publish-controls";
+ const privacy=document.createElement("select");privacy.id="socialPrivacy_"+post.id;const privacyLabels={SELF_ONLY:"Nur ich",MUTUAL_FOLLOW_FRIENDS:"Freunde",PUBLIC_TO_EVERYONE:"Öffentlich",FOLLOWER_OF_CREATOR:"Follower"};const allowedPrivacy=socialCreatorInfo?.privacy_level_options||["SELF_ONLY"];allowedPrivacy.forEach(value=>{const option=document.createElement("option");option.value=value;option.textContent=privacyLabels[value]||value;privacy.append(option);});privacy.value=allowedPrivacy.includes(post.privacy_level)?post.privacy_level:(allowedPrivacy[0]||"SELF_ONLY");
+ const toggles=document.createElement("div");toggles.className="social-publish-toggles";const makeToggle=(label,enabled)=>{const wrap=document.createElement("label");wrap.className="social-publish-toggle";const input=document.createElement("input");input.type="checkbox";input.checked=enabled;wrap.append(input,safeText("span",label));toggles.append(wrap);return input;};const commentsAllowed=makeToggle("Kommentare erlauben",post.disable_comment==null?(socialCreatorInfo?!socialCreatorInfo.comment_disabled:false):!Boolean(post.disable_comment));const duetAllowed=makeToggle("Duet erlauben",post.disable_duet==null?(socialCreatorInfo?!socialCreatorInfo.duet_disabled:false):!Boolean(post.disable_duet));const stitchAllowed=makeToggle("Stitch erlauben",post.disable_stitch==null?(socialCreatorInfo?!socialCreatorInfo.stitch_disabled:false):!Boolean(post.disable_stitch));
+ const scheduleAt=document.createElement("input");scheduleAt.type="datetime-local";scheduleAt.id="socialSchedule_"+post.id;
+ const publishNow=document.createElement("button");publishNow.className="primary";publishNow.textContent="JETZT POSTEN";publishNow.disabled=post.status!=="approved"||!post.video_storage_key;
+ publishNow.onclick=async()=>{publishNow.disabled=true;try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/publish",{method:"POST",body:JSON.stringify({privacy_level:privacy.value,disable_comment:!commentsAllowed.checked,disable_duet:!duetAllowed.checked,disable_stitch:!stitchAllowed.checked})});post.status=d.status;toast("TikTok: "+d.publish_status);await loadSocialPosts();await loadSocialStatus();}catch(e){toast(e.message);publishNow.disabled=false;}};
+ const schedule=document.createElement("button");schedule.className="secondary";schedule.textContent="FREIGEBEN & PLANEN";schedule.disabled=!post.video_storage_key;
+ schedule.onclick=async()=>{if(!scheduleAt.value){toast("Bitte Veröffentlichungszeit auswählen.");return;}schedule.disabled=true;try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/schedule",{method:"POST",body:JSON.stringify({scheduled_for:new Date(scheduleAt.value).toISOString(),privacy_level:privacy.value,disable_comment:!commentsAllowed.checked,disable_duet:!duetAllowed.checked,disable_stitch:!stitchAllowed.checked})});post.status=d.status;post.scheduled_for=d.scheduled_for;toast("Veröffentlichung geplant.");await loadSocialPosts();}catch(e){toast(e.message);schedule.disabled=false;}};
+ if(post.status==="failed"){const retry=document.createElement("button");retry.className="secondary";retry.textContent="FEHLER ZURÜCKSETZEN";retry.onclick=async()=>{retry.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/retry",{method:"POST",body:"{}"});post.status="approved";post.publish_error=null;toast("Beitrag erneut freigegeben.");renderSocialResult(post);await loadSocialPosts();}catch(e){toast(e.message);retry.disabled=false;}};publishControls.append(retry);}
+ if(post.status==="queued"&&!post.provider_post_id&&!post.publish_status){const cancel=document.createElement("button");cancel.className="secondary";cancel.textContent="ZEITPLAN ABBRECHEN";cancel.onclick=async()=>{cancel.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/unschedule",{method:"POST",body:"{}"});post.status="approved";post.scheduled_for=null;toast("Zeitplan abgebrochen.");renderSocialResult(post);await loadSocialPosts();}catch(e){toast(e.message);cancel.disabled=false;}};publishControls.append(cancel);}
+ publishControls.append(privacy,scheduleAt,publishNow,schedule,toggles);host.append(publishControls);
+ const approve=document.createElement("button");approve.className="primary";approve.textContent=post.status==="draft"?"Entwurf freigeben":"Freigabe: "+String(post.status||"draft").toUpperCase();approve.disabled=post.status!=="draft";approve.onclick=async()=>{if(!post.id)return;approve.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/approve",{method:"POST",body:"{}"});post.status="approved";toast("Redaktionell freigegeben. Jetzt posten oder planen.");renderSocialResult(post);await loadSocialPosts();}catch(e){toast(e.message);approve.disabled=false;}};actions.append(approve);
  host.append(actions);
 }
-async function loadSocialStatus(){try{const d=await api("/api/social/status");const t=document.querySelector(".social-live");if(t)t.textContent="● CONTENT ENGINE READY · PUBLISHING LOCKED";}catch(e){toast("Social-Status: "+e.message);}}
+async function loadSocialStatus(){try{const d=await api("/api/social/status");const account=d.tiktok||{};socialCreatorInfo=null;if(account.connected){try{const creator=await api("/api/social/tiktok/creator");socialCreatorInfo=creator.creator;}catch(creatorError){toast("TikTok-Creator-Info: "+creatorError.message);}}const t=document.querySelector(".social-live");const title=$("socialTikTokTitle"),hint=$("socialTikTokHint"),connect=$("socialTikTokConnect"),disconnect=$("socialTikTokDisconnect");if(title)title.textContent=account.connected?"TikTok verbunden · @"+(account.username||"Creator"):"TikTok-Konto nicht verbunden";if(hint)hint.textContent=account.connected?"Verbunden. "+(account.scope||"")+" · R2 "+(d.r2?"bereit":"nicht verfügbar")+". Veröffentlichungen bleiben einzeln freigabepflichtig.":account.configured?"App eingerichtet. Verbinde jetzt dein TikTok-Konto.":"Noch keine TikTok Developer-App eingerichtet. Client Key und Secret in Cloudflare/GitHub hinterlegen.";if(connect)connect.hidden=!!account.connected||!account.configured;if(disconnect)disconnect.hidden=!account.connected;if(t)t.textContent=account.connected?"● CONTENT ENGINE + TIKTOK CONNECTED":"● CONTENT ENGINE READY · TIKTOK NOT CONNECTED";}catch(e){toast("Social-Status: "+e.message);}}
+$("socialTikTokConnect").onclick=()=>{window.location.href="/api/social/tiktok/connect";};
+$("socialTikTokRefresh").onclick=async()=>{await loadSocialStatus();toast("Status aktualisiert.");};
+$("socialTikTokDisconnect").onclick=async()=>{if(!confirm("TikTok-Verbindung wirklich trennen?"))return;try{await api("/api/social/tiktok/disconnect",{method:"POST",body:"{}"});await loadSocialStatus();toast("TikTok getrennt.");}catch(e){toast(e.message);}};
+$("socialAnalyticsRefresh").onclick=async()=>{const host=$("socialAnalytics");host.textContent="TikTok-Daten werden synchronisiert …";try{await api("/api/social/analytics/refresh",{method:"POST",body:"{}"});await loadSocialAnalytics();toast("Performance aktualisiert.");}catch(e){host.textContent=e.message;}};
+async function loadSocialAnalytics(){try{const d=await api("/api/social/analytics");const host=$("socialAnalytics");host.innerHTML="";const videos=d.videos||[];if(!videos.length){host.textContent="Noch keine TikTok-Performance-Daten vorhanden.";return;}const totals=videos.reduce((a,v)=>({views:a.views+Number(v.views||0),likes:a.likes+Number(v.likes||0),comments:a.comments+Number(v.comments||0),shares:a.shares+Number(v.shares||0)}),{views:0,likes:0,comments:0,shares:0});const grid=document.createElement("div");grid.className="social-analytics-grid";[["VIEWS",totals.views],["LIKES",totals.likes],["COMMENTS",totals.comments],["SHARES",totals.shares]].forEach(([label,value])=>{const card=document.createElement("div");card.className="social-analytics-stat";card.append(safeText("small",label),safeText("strong",Number(value).toLocaleString("de-CH")));grid.append(card);});host.append(grid);videos.forEach(v=>{const row=document.createElement("div");row.className="social-analytics-row";row.append(safeText("strong",v.title||v.video_id),safeText("span",Number(v.views||0).toLocaleString("de-CH")),safeText("span",Number(v.likes||0).toLocaleString("de-CH")),safeText("span",Number(v.comments||0).toLocaleString("de-CH")),safeText("span",Number(v.shares||0).toLocaleString("de-CH")));host.append(row);});}catch(e){$("socialAnalytics").textContent=e.message;}}
 async function loadSocialPosts(){
  try{const d=await api("/api/social/posts");const host=$("socialPosts");host.innerHTML="";const posts=d.posts||[];$("socialCount").textContent=posts.length+" ENTWÜRFE";if(!posts.length){host.innerHTML='<div class="empty">Noch keine Entwürfe gespeichert.</div>';return;}
- posts.forEach(post=>{const row=document.createElement("div");row.className="social-list-item";const info=document.createElement("div");info.append(safeText("strong",post.title));info.append(safeText("small",post.platform.toUpperCase()+" · "+post.niche+" · "+new Date(post.created_at).toLocaleString("de-CH")));const status=safeText("span",post.status.toUpperCase(),"social-status");const actions=document.createElement("div");actions.className="social-actions";const open=document.createElement("button");open.className="secondary";open.textContent="Öffnen";open.onclick=()=>{socialCurrentPost=post;renderSocialResult(post);$("socialResult").scrollIntoView({behavior:"smooth",block:"start"});};actions.append(open,status);row.append(info,actions);host.append(row);});
+ posts.forEach(post=>{const row=document.createElement("div");row.className="social-list-item";const info=document.createElement("div");info.append(safeText("strong",post.title));info.append(safeText("small",post.platform.toUpperCase()+" · "+post.niche+" · "+new Date(post.created_at).toLocaleString("de-CH")+(post.scheduled_for?" · Geplant: "+new Date(post.scheduled_for).toLocaleString("de-CH"):"")+(post.publish_error?" · Fehler: "+post.publish_error:"")));const status=safeText("span",post.status.toUpperCase(),"social-status");const actions=document.createElement("div");actions.className="social-actions";const open=document.createElement("button");open.className="secondary";open.textContent="Öffnen";open.onclick=()=>{socialCurrentPost=post;renderSocialResult(post);$("socialResult").scrollIntoView({behavior:"smooth",block:"start"});};actions.append(open,status);row.append(info,actions);host.append(row);});
  }catch(e){$("socialPosts").textContent="Fehler: "+e.message;}
 }
 $("socialRefresh").onclick=()=>loadSocialPosts();
@@ -244,15 +278,91 @@ async function ensureSocialSchema(env) {
     caption TEXT NOT NULL, hashtags_json TEXT NOT NULL DEFAULT '[]', cta TEXT NOT NULL DEFAULT '',
     cover_text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
     scheduled_for TEXT, published_at TEXT, provider_post_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT
+    video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT,
+    video_storage_key TEXT, video_bytes INTEGER, privacy_level TEXT DEFAULT 'SELF_ONLY',
+    publish_status TEXT, publish_error TEXT, provider_video_id TEXT, published_url TEXT, approved_at TEXT,
+    disable_comment INTEGER, disable_duet INTEGER, disable_stitch INTEGER
   )`).run();
   const columns = await env.DB.prepare("PRAGMA table_info(social_posts)").all();
   const existing = new Set((columns.results || []).map(column => column.name));
-  for (const [name, type] of [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"]]) {
-    if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
-  }
+  const additions = [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"],["video_storage_key","TEXT"],["video_bytes","INTEGER"],["privacy_level","TEXT DEFAULT 'SELF_ONLY'"],["publish_status","TEXT"],["publish_error","TEXT"],["provider_video_id","TEXT"],["published_url","TEXT"],["approved_at","TEXT"],["disable_comment","INTEGER"],["disable_duet","INTEGER"],["disable_stitch","INTEGER"]];
+  for (const [name, type] of additions) if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_accounts (
+    platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
+    access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
+    access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
+    privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT, analytics_synced_at TEXT,
+    connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`).run();
+  const accountColumns = await env.DB.prepare("PRAGMA table_info(social_accounts)").all();
+  const accountExisting = new Set((accountColumns.results || []).map(column => column.name));
+  if (!accountExisting.has("analytics_synced_at")) await env.DB.prepare("ALTER TABLE social_accounts ADD COLUMN analytics_synced_at TEXT").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_analytics (
+    video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
+    likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
+    video_created_at TEXT, fetched_at TEXT NOT NULL
+  )`).run();
+}
+async function processSocialQueue(env) {
+  requireDatabase(env);
+  await ensureSocialSchema(env);
+  const now = new Date().toISOString();
+  const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await env.DB.prepare("UPDATE social_posts SET publish_status = NULL, updated_at = ? WHERE platform = 'tiktok' AND status = 'queued' AND provider_post_id IS NULL AND publish_status = 'STARTING' AND updated_at <= ? AND (scheduled_for IS NULL OR scheduled_for <= ?)")
+    .bind(now, stale, now).run();
+  const due = await env.DB.prepare("SELECT * FROM social_posts WHERE platform = 'tiktok' AND status = 'queued' AND provider_post_id IS NULL AND publish_status IS NULL AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 3").bind(now).all();
+  for (const post of due.results || []) {
+    const claim = await env.DB.prepare("UPDATE social_posts SET publish_status = 'STARTING', updated_at = ? WHERE id = ? AND status = 'queued' AND publish_status IS NULL").bind(now, post.id).run();
+    if (!claim.meta?.changes) continue;
+    try {
+      const result = await publishTikTokVideo(env, post);
+      const complete = result.status === "PUBLISH_COMPLETE";
+      await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, updated_at = ?, publish_error = NULL WHERE id = ?")
+        .bind(complete ? "published" : "queued", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), post.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
+        .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
+    }
+  }
+  const pending = await env.DB.prepare("SELECT id, provider_post_id FROM social_posts WHERE status = 'queued' AND provider_post_id IS NOT NULL ORDER BY updated_at ASC LIMIT 5").all();
+  for (const post of pending.results || []) {
+    try {
+      const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
+      const state = status.status || "PROCESSING_UPLOAD";
+      const complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
+      const publicIds = Array.isArray(status.publicaly_available_post_id) ? status.publicaly_available_post_id : [];
+      const videoId = publicIds.length ? String(publicIds[0]) : null;
+      const account = await env.DB.prepare("SELECT username FROM social_accounts WHERE platform = 'tiktok'").first();
+      const publishedUrl = videoId && account?.username ? "https://www.tiktok.com/@" + account.username + "/video/" + videoId : null;
+      await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, provider_video_id = COALESCE(?, provider_video_id), published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, publish_error = ?, published_url = COALESCE(?, published_url), updated_at = ? WHERE id = ?")
+        .bind(state, complete ? "published" : failed ? "failed" : "queued", videoId, complete ? 1 : 0, new Date().toISOString(),
+          failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen").slice(0, 1000) : null,
+          publishedUrl, new Date().toISOString(), post.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE social_posts SET publish_error = ?, updated_at = ? WHERE id = ?")
+        .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
+    }
+  }
+}
+async function processSocialAnalytics(env) {
+  requireDatabase(env);
+  await ensureSocialSchema(env);
+  const account = await env.DB.prepare("SELECT scope, analytics_synced_at FROM social_accounts WHERE platform = 'tiktok'").first();
+  if (!account || !String(account.scope || "").includes("video.list")) return;
+  if (account.analytics_synced_at && Date.now() - Date.parse(account.analytics_synced_at) < 12 * 60 * 60 * 1000) return;
+  const data = await fetchTikTokAnalytics(env);
+  const now = new Date().toISOString();
+  for (const video of data.videos || []) {
+    await env.DB.prepare("INSERT INTO social_analytics (video_id, title, views, likes, comments, shares, video_created_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, views = excluded.views, likes = excluded.likes, comments = excluded.comments, shares = excluded.shares, video_created_at = excluded.video_created_at, fetched_at = excluded.fetched_at")
+      .bind(String(video.id), video.title || video.video_description || "", Number(video.view_count || 0), Number(video.like_count || 0), Number(video.comment_count || 0), Number(video.share_count || 0), video.create_time ? new Date(Number(video.create_time) * 1000).toISOString() : null, now).run();
+  }
+  await env.DB.prepare("UPDATE social_accounts SET analytics_synced_at = ?, updated_at = ? WHERE platform = 'tiktok'").bind(now, now).run();
+}
+async function tiktokRedirectUri(request, env) {
+  return env.TIKTOK_REDIRECT_URI || new URL("/api/social/tiktok/callback", request.url).toString();
 }
 function json(data, status = 200, extra = {}) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store", ...extra } });
@@ -383,10 +493,34 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE) } });
+      return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE), socialMedia: Boolean(env.SOCIAL_MEDIA) } });
     }
     if (request.method === "GET" && url.pathname === "/") {
       return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/social/tiktok/callback") {
+      try {
+        requireDatabase(env);
+        await ensureSocialSchema(env);
+        const state = url.searchParams.get("state") || "";
+        const code = url.searchParams.get("code") || "";
+        const saved = await env.DB.prepare("SELECT state, expires_at FROM social_oauth_states WHERE state = ?").bind(state).first();
+        await env.DB.prepare("DELETE FROM social_oauth_states WHERE state = ?").bind(state).run();
+        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code) return new Response("TikTok OAuth state ungültig oder abgelaufen.", { status: 400 });
+        if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return new Response("TikTok-App-Schlüssel fehlen.", { status: 503 });
+        const form = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, client_secret: env.TIKTOK_CLIENT_SECRET, code, grant_type: "authorization_code", redirect_uri: await tiktokRedirectUri(request, env) });
+        const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.error || !result.access_token || !result.open_id) throw new Error("TikTok OAuth fehlgeschlagen: " + (result.error_description || result.error || response.status));
+        const access = await encryptTikTokToken(result.access_token, env.NEXUS_SESSION_SECRET);
+        const refresh = await encryptTikTokToken(result.refresh_token, env.NEXUS_SESSION_SECRET);
+        const now = Date.now(), stamp = new Date(now).toISOString();
+        await env.DB.prepare("INSERT INTO social_accounts (platform, open_id, access_token_encrypted, refresh_token_encrypted, access_expires_at, refresh_expires_at, scope, connected_at, updated_at) VALUES ('tiktok', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET open_id = excluded.open_id, access_token_encrypted = excluded.access_token_encrypted, refresh_token_encrypted = excluded.refresh_token_encrypted, access_expires_at = excluded.access_expires_at, refresh_expires_at = excluded.refresh_expires_at, scope = excluded.scope, connected_at = excluded.connected_at, updated_at = excluded.updated_at")
+          .bind(result.open_id, access, refresh, new Date(now + Number(result.expires_in || 86400) * 1000).toISOString(), new Date(now + Number(result.refresh_expires_in || 31536000) * 1000).toISOString(), result.scope || "", stamp, stamp).run();
+        try { await getTikTokCreatorInfo(env); } catch {}
+        return Response.redirect(new URL("/?social=tiktok-connected", request.url).toString(), 302);
+      } catch (error) { return new Response("TikTok-Verbindung fehlgeschlagen: " + safeError(error), { status: 400 }); }
     }
 
     if (request.method === "GET" && url.pathname === "/api/session") {
@@ -431,7 +565,7 @@ export default {
         if (!task) return json({ error: "Aufgabe fehlt." }, 400);
         requireDatabase(env);
         const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
-        const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\\n");
+        const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\n");
         const combinedContext = [context, memoryContext ? "Vom Nutzer gespeicherte Fakten:\\n" + memoryContext : ""].filter(Boolean).join("\\n\\n").slice(0, 12000);
         const runId = crypto.randomUUID(), now = new Date().toISOString();
         await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'queued', ?, ?, ?)")
@@ -457,13 +591,68 @@ export default {
       requireDatabase(env);
       if (url.pathname.startsWith("/api/social/")) await ensureSocialSchema(env);
 
+      if (request.method === "GET" && url.pathname === "/api/social/tiktok/connect") {
+        if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return json({ error: "TIKTOK_CLIENT_KEY und TIKTOK_CLIENT_SECRET fehlen in Cloudflare Secrets." }, 503);
+        const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+        const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        await env.DB.prepare("DELETE FROM social_oauth_states WHERE expires_at <= ?").bind(new Date().toISOString()).run();
+        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at) VALUES (?, ?, ?)").bind(state, expires, new Date().toISOString()).run();
+        const authorize = new URL("https://www.tiktok.com/v2/auth/authorize/");
+        authorize.search = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, response_type: "code", scope: "user.info.basic,video.publish,video.list", redirect_uri: await tiktokRedirectUri(request, env), state }).toString();
+        return Response.redirect(authorize.toString(), 302);
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/tiktok/disconnect") {
+        await env.DB.prepare("DELETE FROM social_accounts WHERE platform = 'tiktok'").run();
+        return json({ ok: true });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/tiktok/creator") {
+        const creator = await getTikTokCreatorInfo(env);
+        return json({ creator });
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/analytics/refresh") {
+        const data = await fetchTikTokAnalytics(env);
+        const videos = data.videos || [], now = new Date().toISOString();
+        for (const video of videos) {
+          await env.DB.prepare("INSERT INTO social_analytics (video_id, title, views, likes, comments, shares, video_created_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET title = excluded.title, views = excluded.views, likes = excluded.likes, comments = excluded.comments, shares = excluded.shares, video_created_at = excluded.video_created_at, fetched_at = excluded.fetched_at")
+            .bind(String(video.id), video.title || video.video_description || "", Number(video.view_count || 0), Number(video.like_count || 0), Number(video.comment_count || 0), Number(video.share_count || 0), video.create_time ? new Date(Number(video.create_time) * 1000).toISOString() : null, now).run();
+        }
+        await env.DB.prepare("UPDATE social_accounts SET analytics_synced_at = ?, updated_at = ? WHERE platform = 'tiktok'").bind(now, now).run();
+        return json({ synced: videos.length, cursor: data.cursor || null, has_more: Boolean(data.has_more) });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/analytics") {
+        const result = await env.DB.prepare("SELECT video_id, title, views, likes, comments, shares, video_created_at, fetched_at FROM social_analytics ORDER BY views DESC LIMIT 30").all();
+        return json({ videos: result.results || [] });
+      }
+      const mediaAction = url.pathname.match(/^\/api\/social\/media\/([a-f0-9-]+)$/i);
+      if (request.method === "GET" && mediaAction) {
+        const row = await env.DB.prepare("SELECT video_storage_key FROM social_posts WHERE id = ?").bind(mediaAction[1]).first();
+        if (!row?.video_storage_key || !env.SOCIAL_MEDIA) return new Response("Video nicht gefunden.", { status: 404 });
+        const rangeRequested = request.headers.has("Range");
+        const object = await env.SOCIAL_MEDIA.get(row.video_storage_key, rangeRequested ? { range: request.headers } : undefined);
+        if (!object || !object.body) return new Response("Video nicht gefunden.", { status: 404 });
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set("Cache-Control", "private, no-store");
+        headers.set("Accept-Ranges", "bytes");
+        headers.set("Content-Length", String(object.range?.length ?? object.size));
+        headers.set("Content-Disposition", "inline; filename=\"nexus-" + mediaAction[1] + ".mp4\"");
+        let status = 200;
+        if (object.range) {
+          const start = object.range.offset || 0;
+          const end = start + object.range.length - 1;
+          headers.set("Content-Range", "bytes " + start + "-" + end + "/" + object.size);
+          status = 206;
+        }
+        return new Response(object.body, { status, headers });
+      }
       if (request.method === "GET" && url.pathname === "/api/social/status") {
         const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
-        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
+        const account = await env.DB.prepare("SELECT username, display_name, scope, access_expires_at, connected_at FROM social_accounts WHERE platform = 'tiktok'").first();
+        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], r2: Boolean(env.SOCIAL_MEDIA), tiktok: { configured: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), connected: Boolean(account), username: account?.username || "", displayName: account?.display_name || "", scope: account?.scope || "", expiresAt: account?.access_expires_at || null }, counts: result.results || [] });
       }
       if (request.method === "GET" && url.pathname === "/api/social/posts") {
-        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
-        return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
+        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, video_storage_key, video_bytes, privacy_level, publish_status, publish_error, provider_post_id, published_url, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
+        return json({ posts: (result.results || []).map(row => ({ ...row, video_url: row.video_storage_key ? "/api/social/media/" + row.id : row.video_url, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
       }
       const videoAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/video$/i);
       if (request.method === "POST" && videoAction) {
@@ -481,30 +670,106 @@ export default {
           "Style: polished creator-grade cinematography, visually striking opening frame, coherent motion, natural lighting, no subtitles, no logos, no watermarks.",
           "Audio: synchronized natural ambient sound and tasteful cinematic sound design. No copyrighted songs."
         ].join("\n")).trim().slice(0, 3000);
-        if (!env.AI?.run) return json({ error: "Cloudflare AI binding ist nicht verfügbar." }, 503);
+        if (!env.AI?.run) return json({ error: "Workers AI ist nicht verfügbar." }, 503);
+        if (!env.SOCIAL_MEDIA) return json({ error: "R2-Speicher ist noch nicht eingerichtet. Deployment mit SOCIAL_MEDIA-Bucket abwarten." }, 503);
         const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
-        const videoUrl = output?.result?.video || output?.video || output?.result?.url;
-        if (!videoUrl || !/^https:\/\//i.test(videoUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
-        const now = new Date().toISOString();
-        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
-          .bind(videoUrl, duration, prompt, now, id).run();
-        return json({ post: { id, video_url: videoUrl, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
+        const providerUrl = output?.result?.video || output?.video || output?.result?.url;
+        if (!providerUrl || !/^https:\/\//i.test(providerUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
+        const remote = await fetch(providerUrl);
+        if (!remote.ok || !remote.body) return json({ error: "Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ")." }, 502);
+        const declaredSize = Number(remote.headers.get("Content-Length") || 0);
+        if (declaredSize > 64 * 1024 * 1024) return json({ error: "Der Clip ist größer als das derzeit unterstützte 64-MB-Limit." }, 413);
+        const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
+        const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+        if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
+          await env.SOCIAL_MEDIA.delete(key);
+          return json({ error: "Videodatei ist leer oder größer als das 64-MB-Limit." }, 413);
+        }
+        const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
+        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
+          .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
+        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
       }
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
         const input = normalizeSocialInput(body);
+        const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
+        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
+        if (performanceContext) input.account_context = (input.account_context + "\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
         await env.DB.prepare("INSERT INTO social_posts (id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")
           .bind(id, input.platform, input.niche, input.objective, input.language, generated.title, generated.hook, generated.script, JSON.stringify(generated.scenes), generated.caption, JSON.stringify(generated.hashtags), generated.cta, generated.cover_text, now, now).run();
         return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
       }
+      const publishAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(publish|schedule|publish-status|retry|unschedule)$/i);
+      if (publishAction && (request.method === "POST" || (request.method === "GET" && publishAction[2] === "publish-status"))) {
+        const [, id, action] = publishAction;
+        const post = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
+        if (!post) return json({ error: "Content-Entwurf nicht gefunden." }, 404);
+        if (action === "publish-status") {
+          if (!post.provider_post_id) return json({ error: "Für diesen Beitrag gibt es noch keine TikTok-Publish-ID." }, 409);
+          const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
+          const state = status.status || "PROCESSING_UPLOAD", complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
+          const publicIds = Array.isArray(status.publicaly_available_post_id) ? status.publicaly_available_post_id : [];
+          const videoId = publicIds.length ? String(publicIds[0]) : null;
+          const account = await env.DB.prepare("SELECT username FROM social_accounts WHERE platform = 'tiktok'").first();
+          const publishedUrl = videoId && account?.username ? "https://www.tiktok.com/@" + account.username + "/video/" + videoId : null;
+          await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, provider_video_id = COALESCE(?, provider_video_id), published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, published_url = COALESCE(?, published_url), publish_error = ?, updated_at = ? WHERE id = ?")
+            .bind(state, complete ? "published" : failed ? "failed" : "queued", videoId, complete ? 1 : 0, new Date().toISOString(), publishedUrl, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : failed ? "failed" : "queued", publish_status: state, published_url: publishedUrl });
+        }
+        const body = await request.json().catch(() => ({}));
+        const privacy = String(body.privacy_level || "SELF_ONLY");
+        if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
+        if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
+        if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
+        if (action === "schedule" && (post.provider_post_id || post.publish_status)) return json({ error: "Dieser Beitrag wird bereits an TikTok übertragen und kann nicht mehr umgeplant werden." }, 409);
+        if (action === "unschedule") {
+          if (post.status !== "queued" || post.provider_post_id || post.publish_status) return json({ error: "Dieser Zeitplan kann nicht mehr abgebrochen werden." }, 409);
+          await env.DB.prepare("UPDATE social_posts SET status = 'approved', scheduled_for = NULL, updated_at = ? WHERE id = ? AND status = 'queued' AND provider_post_id IS NULL AND publish_status IS NULL")
+            .bind(new Date().toISOString(), id).run();
+          return json({ id, status: "approved", message: "Zeitplan abgebrochen. Entwurf bleibt freigegeben." });
+        }
+        if (action === "retry") {
+          if (post.status !== "failed") return json({ error: "Nur fehlgeschlagene Veröffentlichungen können zurückgesetzt werden." }, 409);
+          await env.DB.prepare("UPDATE social_posts SET status = 'approved', provider_post_id = NULL, provider_video_id = NULL, publish_status = NULL, publish_error = NULL, published_at = NULL, published_url = NULL, scheduled_for = NULL, approved_at = ?, updated_at = ? WHERE id = ? AND status = 'failed'")
+            .bind(new Date().toISOString(), new Date().toISOString(), id).run();
+          return json({ id, status: "approved", message: "Beitrag zurück auf Freigabe gesetzt. Du kannst erneut posten oder planen." });
+        }
+        if (action === "schedule") {
+          const creator = await getTikTokCreatorInfo(env);
+          if (!(creator.privacy_level_options || []).includes(privacy)) return json({ error: "Diese Privatsphäre ist für das verbundene TikTok-Konto nicht verfügbar." }, 400);
+          const time = Date.parse(body.scheduled_for || "");
+          if (!Number.isFinite(time) || time < Date.now() + 120000 || time > Date.now() + 90 * 86400000) return json({ error: "Bitte eine Veröffentlichungszeit zwischen 2 Minuten und 90 Tagen in der Zukunft wählen." }, 400);
+          const result = await env.DB.prepare("UPDATE social_posts SET status = 'queued', privacy_level = ?, disable_comment = ?, disable_duet = ?, disable_stitch = ?, scheduled_for = ?, approved_at = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status IN ('draft','approved','queued')")
+            .bind(privacy, body.disable_comment === undefined ? Number(Boolean(creator.comment_disabled)) : Number(Boolean(body.disable_comment)), body.disable_duet === undefined ? Number(Boolean(creator.duet_disabled)) : Number(Boolean(body.disable_duet)), body.disable_stitch === undefined ? Number(Boolean(creator.stitch_disabled)) : Number(Boolean(body.disable_stitch)), new Date(time).toISOString(), new Date().toISOString(), new Date().toISOString(), id).run();
+          if (!result.meta?.changes) return json({ error: "Beitrag kann nicht eingeplant werden." }, 409);
+          return json({ id, status: "queued", scheduled_for: new Date(time).toISOString(), privacy_level: privacy });
+        }
+        if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
+        if (post.status !== "approved") return json({ error: "Bitte den Beitrag zuerst redaktionell freigeben." }, 409);
+        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'queued', publish_status = 'STARTING', privacy_level = ?, disable_comment = ?, disable_duet = ?, disable_stitch = ?, scheduled_for = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
+          .bind(privacy, body.disable_comment === undefined ? Number(Boolean(post.disable_comment)) : Number(Boolean(body.disable_comment)), body.disable_duet === undefined ? Number(Boolean(post.disable_duet)) : Number(Boolean(body.disable_duet)), body.disable_stitch === undefined ? Number(Boolean(post.disable_stitch)) : Number(Boolean(body.disable_stitch)), new Date().toISOString(), new Date().toISOString(), id).run();
+        if (!claim.meta?.changes) return json({ error: "Beitrag wird bereits verarbeitet oder ist nicht freigegeben." }, 409);
+        try {
+          const result = await publishTikTokVideo(env, { ...post, privacy_level: privacy, disable_comment: body.disable_comment === undefined ? post.disable_comment : Number(Boolean(body.disable_comment)), disable_duet: body.disable_duet === undefined ? post.disable_duet : Number(Boolean(body.disable_duet)), disable_stitch: body.disable_stitch === undefined ? post.disable_stitch : Number(Boolean(body.disable_stitch)) });
+          const complete = result.status === "PUBLISH_COMPLETE";
+          await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, publish_error = NULL, updated_at = ? WHERE id = ?")
+            .bind(complete ? "published" : "queued", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : "queued", publish_status: result.status, published_url: result.share_url || null }, 202);
+        } catch (error) {
+          await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
+            .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), id).run();
+          return json({ error: safeError(error) }, 502);
+        }
+      }
       const socialAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(approve|reject)$/i);
       if (request.method === "POST" && socialAction) {
         const [, id, action] = socialAction;
         const nextStatus = action === "approve" ? "approved" : "draft";
-        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
-          .bind(nextStatus, new Date().toISOString(), id).run();
+        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE approved_at END, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
+          .bind(nextStatus, nextStatus, new Date().toISOString(), new Date().toISOString(), id).run();
         if (!result.meta?.changes) return json({ error: "Entwurf nicht gefunden oder Status nicht änderbar." }, 404);
         return json({ id, status: nextStatus, message: action === "approve" ? "Inhalt freigegeben. Noch nicht veröffentlicht." : "Entwurf zurück in die Bearbeitung gesetzt." });
       }
@@ -727,6 +992,8 @@ export default {
     }
   },
   scheduled(controller, env, ctx) {
-    ctx.waitUntil(processDueSchedules(env));
+    ctx.waitUntil(processDueSchedules(env).catch(error => console.error("NEXUS schedules:", safeError(error))));
+    ctx.waitUntil(processSocialQueue(env).catch(error => console.error("NEXUS social queue:", safeError(error))));
+    ctx.waitUntil(processSocialAnalytics(env).catch(error => console.error("NEXUS social analytics:", safeError(error))));
   }
 };
