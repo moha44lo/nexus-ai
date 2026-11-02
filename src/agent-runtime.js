@@ -48,7 +48,7 @@ export async function createPlan(env, task, memory = []) {
 }
 
 export function needsApproval(plan) {
-  return plan.steps.some(step => ["browser.click", "browser.fill"].includes(step.tool));
+  return plan.steps.some(step => step.requiresApproval === true || ["browser.click", "browser.fill"].includes(step.tool));
 }
 
 async function repairSelector(env, page, step, previousSelector, failure) {
