@@ -250,7 +250,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/login") {
       try {
         const body = await request.json();
-        if (!env.NEXUS_PIN || String(body.pin || "") !== env.NEXUS_PIN) return json({ error: "PIN falsch." }, 401);
+        if (!env.NEXUS_LOGIN_PIN || String(body.pin || "") !== env.NEXUS_LOGIN_PIN) return json({ error: "PIN falsch." }, 401);
         if (!env.NEXUS_SESSION_SECRET || env.NEXUS_SESSION_SECRET.length < 32) {
           return json({ error: "NEXUS_SESSION_SECRET fehlt oder ist zu kurz. Bitte ein Secret mit mindestens 32 Zeichen hinterlegen." }, 503);
         }
