@@ -28,7 +28,7 @@ function extractJson(text) {
 export async function createPlan(env, task, memory = []) {
   const result = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
     messages: [
-      { role: "system", content: `Du bist NEXUS, ein autonomer Browser-Agent. Antworte ausschließlich mit gültigem JSON: {"goal":"...","summary":"...","steps":[{"id":"s1","tool":"browser.navigate|browser.inspect|browser.click|browser.fill|browser.extract","args":{...},"reason":"..."}]}. Maximal ${MAX_STEPS} Schritte. Nutze navigate mit {"url":"https://..."}; inspect mit {}; click mit {"selector":"CSS"}; fill mit {"selector":"CSS","value":"..."}; extract mit {"selector":"CSS"} oder {}. Wenn die Aufgabe keine Browseraktion benötigt, liefere steps:[] und erkläre das in summary. Erfinde keine bereits erfolgten Aktionen. Browser-Klicks und Formulareingaben gelten als externe Aktionen und benötigen Freigabe. Verwende niemals Zahlungs-, Kauf-, Lösch-, Veröffentlichungs-, Nachrichtenversand- oder Kontoänderungsaktionen; diese werden als nicht unterstützt markiert.` },
+      { role: "system", content: `Du bist NEXUS, ein autonomer Browser-Agent. Antworte ausschließlich mit gültigem JSON: {"goal":"...","summary":"...","steps":[{"id":"s1","tool":"browser.search|browser.navigate|browser.inspect|browser.click|browser.fill|browser.extract","args":{...},"reason":"..."}]}. Maximal ${MAX_STEPS} Schritte. Nutze search mit {"query":"Suchanfrage"} für aktuelle Web-Recherche; navigate mit {"url":"https://..."}; inspect mit {}; click mit {"selector":"CSS"}; fill mit {"selector":"CSS","value":"..."}; extract mit {"selector":"CSS"} oder {}. Für Recherche zuerst suchen, dann relevante Ergebnisse über navigate/inspect prüfen und URLs in der Antwort nennen. Wenn die Aufgabe keine Browseraktion benötigt, liefere steps:[] und erkläre das in summary. Erfinde keine bereits erfolgten Aktionen. Browser-Klicks und Formulareingaben gelten als externe Aktionen und benötigen Freigabe. Verwende niemals Zahlungs-, Kauf-, Lösch-, Veröffentlichungs-, Nachrichtenversand- oder Kontoänderungsaktionen; diese werden als nicht unterstützt markiert.` },
       { role: "system", content: "Relevante gespeicherte Fakten:\n" + memory.map(x => "- " + x.fact).join("\n").slice(0, 5000) },
       { role: "user", content: String(task).slice(0, MAX_TEXT) }
     ],
@@ -37,12 +37,12 @@ export async function createPlan(env, task, memory = []) {
   });
   const plan = extractJson(extractWorkersAIText(result));
   if (!Array.isArray(plan.steps) || plan.steps.length > MAX_STEPS) throw new Error("Ungültige oder zu lange Schrittfolge.");
-  const allowed = new Set(["browser.navigate", "browser.inspect", "browser.click", "browser.fill", "browser.extract"]);
+  const allowed = new Set(["browser.search", "browser.navigate", "browser.inspect", "browser.click", "browser.fill", "browser.extract"]);
   for (const [index, step] of plan.steps.entries()) {
     if (!allowed.has(step.tool)) throw new Error("Nicht erlaubtes Tool im Plan: " + String(step.tool));
     if (!step.id) step.id = "s" + (index + 1);
     if (!step.args || typeof step.args !== "object" || Array.isArray(step.args)) step.args = {};
-    if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);
+    if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);\n    if (step.tool === "browser.search" && !String(step.args.query || "").trim()) throw new Error("Suchanfrage fehlt.");
     if (["browser.click", "browser.fill"].includes(step.tool) && !step.args.selector) throw new Error("CSS-Selektor fehlt.");
     if (step.tool === "browser.fill" && typeof step.args.value !== "string") throw new Error("Eingabewert fehlt.");
   }
@@ -50,7 +50,7 @@ export async function createPlan(env, task, memory = []) {
   for (const step of plan.steps) {
     if (stepIds.has(step.id)) throw new Error("Doppelte Schritt-ID im Agentenplan.");
     stepIds.add(step.id);
-    if (step.args.url) step.args.url = validateBrowserUrl(step.args.url);
+    if (step.args.url) step.args.url = validateBrowserUrl(step.args.url);\n    if (step.tool === "browser.search") step.args.query = String(step.args.query).trim().slice(0, 500);
     if (step.reason) step.reason = String(step.reason).slice(0, 300);
   }
   const normalized = { goal: String(plan.goal || task).slice(0, 300), summary: String(plan.summary || "").slice(0, 1200), steps: plan.steps };
