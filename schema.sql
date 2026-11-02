@@ -43,3 +43,13 @@ CREATE TABLE IF NOT EXISTS schedules (
   timezone TEXT NOT NULL DEFAULT 'Europe/Zurich', interval_minutes INTEGER NOT NULL DEFAULT 60, enabled INTEGER NOT NULL DEFAULT 1,
   next_run_at TEXT, last_run_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+
+-- Login abuse protection: only a one-way hash of the client IP is stored.
+CREATE TABLE IF NOT EXISTS login_attempts (
+  ip_hash TEXT PRIMARY KEY,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  window_started_at TEXT NOT NULL,
+  blocked_until TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_updated ON login_attempts(updated_at);
