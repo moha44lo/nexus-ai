@@ -327,7 +327,7 @@ export default {
         if (body.approved !== true) {
           await env.DB.prepare("UPDATE agent_runs SET status = 'rejected', summary = ?, updated_at = ? WHERE id = ?").bind("Vom Nutzer abgelehnt.", now, runId).run();
           const answer = "Abgelehnt. Es wurden keine Browser-Aktionen ausgeführt.";
-          await saveMessage(env, run.conversation_id, "assistant", answer);
+          if (run.conversation_id) await saveMessage(env, run.conversation_id, "assistant", answer);
           return json({ status: "rejected", answer });
         }
         const plan = JSON.parse(run.plan_json);
@@ -340,7 +340,7 @@ export default {
         await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
           .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
         const answer = status === "completed" ? "Browser-Aufgabe abgeschlossen. Ergebnis:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
-        await saveMessage(env, run.conversation_id, "assistant", answer);
+        if (run.conversation_id) await saveMessage(env, run.conversation_id, "assistant", answer);
         return json({ status, answer, result });
       }
 
