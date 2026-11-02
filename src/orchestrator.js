@@ -17,9 +17,20 @@ const ROLES = [
   { id: "optimizer", model: "@cf/zai-org/glm-4.7-flash", name: "Optimizer", title: "Performance-Optimierer", symbol: "↗", prompt: "Du bist der Performance-Optimierer. Verbessere Klarheit, Effizienz, Wirkung und Umsetzbarkeit. Entferne unnötige Komplexität." }
 ];
 
+const TRANSIENT_AI_ERROR = /(?:\\b429\\b|\\b500\\b|\\b502\\b|\\b503\\b|\\b504\\b|rate.?limit|overload|temporarily unavailable|internal server error|timed? ?out|timeout)/i;
+
 async function invoke(env, model, messages, maxTokens = 900) {
-  const result = await env.AI.run(model, { messages, max_tokens: maxTokens, chat_template_kwargs: { enable_thinking: false } });
-  return extractWorkersAIText(result);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await env.AI.run(model, { messages, max_tokens: maxTokens, chat_template_kwargs: { enable_thinking: false } });
+      return extractWorkersAIText(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt === 2 || !TRANSIENT_AI_ERROR.test(message)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
+  }
+  throw new Error("Workers AI request failed after retry.");
 }
 async function emit(onAgent, agent, name, title, status, output = "") {
   await onAgent({ agent, name, title, status, output: String(output).slice(0, 5000), model: ROLES.find(item => item.id === agent)?.model || null, createdAt: new Date().toISOString() });
