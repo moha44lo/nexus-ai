@@ -86,7 +86,10 @@ CREATE TABLE IF NOT EXISTS social_posts (
   publish_error TEXT,
   provider_video_id TEXT,
   published_url TEXT,
-  approved_at TEXT
+  approved_at TEXT,
+  disable_comment INTEGER,
+  disable_duet INTEGER,
+  disable_stitch INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC);
