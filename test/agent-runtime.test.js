@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateBrowserUrl } from "../src/agent-runtime.js";
+import { validateBrowserUrl, createPlan, needsApproval } from "../src/agent-runtime.js";
 
 test("accepts public HTTPS destinations", () => {
   assert.equal(validateBrowserUrl("https://example.com/path"), "https://example.com/path");
@@ -28,4 +28,19 @@ test("blocks private IPv6 unique-local destinations", () => {
 });
 test("blocks private IPv6 link-local destinations", () => {
   assert.throws(() => validateBrowserUrl("http://[fe80::1]/"), /gesperrt/);
+});
+
+test("requires approval for browser clicks and form entry", () => {
+  assert.equal(needsApproval({ steps: [{ tool: "browser.click" }] }), true);
+  assert.equal(needsApproval({ steps: [{ tool: "browser.fill" }] }), true);
+  assert.equal(needsApproval({ steps: [{ tool: "browser.inspect" }] }), false);
+});
+
+test("independent reviewer can veto a planner proposal", async () => {
+  const replies = [
+    { response: JSON.stringify({ goal: "test", summary: "test", steps: [{ id: "s1", tool: "browser.inspect", args: {} }] }) },
+    { response: JSON.stringify({ approved: false, reason: "Nicht sicher." }) }
+  ];
+  const env = { AI: { run: async () => replies.shift() } };
+  await assert.rejects(() => createPlan(env, "Prüfe diese Seite", []), /Review-Agent hat den Plan gestoppt/);
 });
