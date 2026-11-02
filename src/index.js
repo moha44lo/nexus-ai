@@ -242,7 +242,7 @@ function renderSocialResult(post){
  const approve=document.createElement("button");approve.className="primary";approve.textContent="Entwurf freigeben";approve.onclick=async()=>{if(!post.id)return;approve.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/approve",{method:"POST",body:"{}"});post.status="approved";toast("Redaktionell freigegeben. Jetzt posten oder planen.");renderSocialResult(post);await loadSocialPosts();}catch(e){toast(e.message);approve.disabled=false;}};actions.append(approve);
  host.append(actions);
 }
-async function loadSocialStatus(){try{const d=await api("/api/social/status");const account=d.tiktok||{};socialCreatorInfo=null;if(account.connected){try{const creator=await api("/api/social/tiktok/creator");socialCreatorInfo=creator.creator;}catch(creatorError){toast("TikTok-Creator-Info: "+creatorError.message);}}const t=document.querySelector(".social-live");const account=d.tiktok||{};const title=$("socialTikTokTitle"),hint=$("socialTikTokHint"),connect=$("socialTikTokConnect"),disconnect=$("socialTikTokDisconnect");if(title)title.textContent=account.connected?"TikTok verbunden · @"+(account.username||"Creator"):"TikTok-Konto nicht verbunden";if(hint)hint.textContent=account.connected?"Verbunden. "+(account.scope||"")+" · R2 "+(d.r2?"bereit":"nicht verfügbar")+". Veröffentlichungen bleiben einzeln freigabepflichtig.":account.configured?"App eingerichtet. Verbinde jetzt dein TikTok-Konto.":"Noch keine TikTok Developer-App eingerichtet. Client Key und Secret in Cloudflare/GitHub hinterlegen.";if(connect)connect.hidden=!!account.connected||!account.configured;if(disconnect)disconnect.hidden=!account.connected;if(t)t.textContent=account.connected?"● CONTENT ENGINE + TIKTOK CONNECTED":"● CONTENT ENGINE READY · TIKTOK NOT CONNECTED";}catch(e){toast("Social-Status: "+e.message);}}
+async function loadSocialStatus(){try{const d=await api("/api/social/status");const account=d.tiktok||{};socialCreatorInfo=null;if(account.connected){try{const creator=await api("/api/social/tiktok/creator");socialCreatorInfo=creator.creator;}catch(creatorError){toast("TikTok-Creator-Info: "+creatorError.message);}}const t=document.querySelector(".social-live");const title=$("socialTikTokTitle"),hint=$("socialTikTokHint"),connect=$("socialTikTokConnect"),disconnect=$("socialTikTokDisconnect");if(title)title.textContent=account.connected?"TikTok verbunden · @"+(account.username||"Creator"):"TikTok-Konto nicht verbunden";if(hint)hint.textContent=account.connected?"Verbunden. "+(account.scope||"")+" · R2 "+(d.r2?"bereit":"nicht verfügbar")+". Veröffentlichungen bleiben einzeln freigabepflichtig.":account.configured?"App eingerichtet. Verbinde jetzt dein TikTok-Konto.":"Noch keine TikTok Developer-App eingerichtet. Client Key und Secret in Cloudflare/GitHub hinterlegen.";if(connect)connect.hidden=!!account.connected||!account.configured;if(disconnect)disconnect.hidden=!account.connected;if(t)t.textContent=account.connected?"● CONTENT ENGINE + TIKTOK CONNECTED":"● CONTENT ENGINE READY · TIKTOK NOT CONNECTED";}catch(e){toast("Social-Status: "+e.message);}}
 $("socialTikTokConnect").onclick=()=>{window.location.href="/api/social/tiktok/connect";};
 $("socialTikTokRefresh").onclick=async()=>{await loadSocialStatus();toast("Status aktualisiert.");};
 $("socialTikTokDisconnect").onclick=async()=>{if(!confirm("TikTok-Verbindung wirklich trennen?"))return;try{await api("/api/social/tiktok/disconnect",{method:"POST",body:"{}"});await loadSocialStatus();toast("TikTok getrennt.");}catch(e){toast(e.message);}};
@@ -268,7 +268,7 @@ restoreSession();
 
 
 async function ensureSocialSchema(env) {
-  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_posts (
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_posts (
     id TEXT PRIMARY KEY, platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
     niche TEXT NOT NULL, objective TEXT NOT NULL DEFAULT 'growth', language TEXT NOT NULL DEFAULT 'de',
     title TEXT NOT NULL, hook TEXT NOT NULL, script TEXT NOT NULL, scenes_json TEXT NOT NULL DEFAULT '[]',
@@ -278,29 +278,29 @@ async function ensureSocialSchema(env) {
     video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT,
     video_storage_key TEXT, video_bytes INTEGER, privacy_level TEXT DEFAULT 'SELF_ONLY',
     publish_status TEXT, publish_error TEXT, provider_video_id TEXT, published_url TEXT, approved_at TEXT
-  )\`).run();
+  )`).run();
   const columns = await env.DB.prepare("PRAGMA table_info(social_posts)").all();
   const existing = new Set((columns.results || []).map(column => column.name));
   const additions = [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"],["video_storage_key","TEXT"],["video_bytes","INTEGER"],["privacy_level","TEXT DEFAULT 'SELF_ONLY'"],["publish_status","TEXT"],["publish_error","TEXT"],["provider_video_id","TEXT"],["published_url","TEXT"],["approved_at","TEXT"]];
   for (const [name, type] of additions) if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
-  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_accounts (
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_accounts (
     platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
     access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
     access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
     privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT, analytics_synced_at TEXT,
     connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
-  )\`).run();
+  )`).run();
   const accountColumns = await env.DB.prepare("PRAGMA table_info(social_accounts)").all();
   const accountExisting = new Set((accountColumns.results || []).map(column => column.name));
   if (!accountExisting.has("analytics_synced_at")) await env.DB.prepare("ALTER TABLE social_accounts ADD COLUMN analytics_synced_at TEXT").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
-  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_analytics (
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_analytics (
     video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
     likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
     video_created_at TEXT, fetched_at TEXT NOT NULL
-  )\`).run();
+  )`).run();
 }
 async function processSocialQueue(env) {
   requireDatabase(env);
