@@ -267,22 +267,73 @@ restoreSession();
 
 
 async function ensureSocialSchema(env) {
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_posts (
+  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_posts (
     id TEXT PRIMARY KEY, platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
     niche TEXT NOT NULL, objective TEXT NOT NULL DEFAULT 'growth', language TEXT NOT NULL DEFAULT 'de',
     title TEXT NOT NULL, hook TEXT NOT NULL, script TEXT NOT NULL, scenes_json TEXT NOT NULL DEFAULT '[]',
     caption TEXT NOT NULL, hashtags_json TEXT NOT NULL DEFAULT '[]', cta TEXT NOT NULL DEFAULT '',
     cover_text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
     scheduled_for TEXT, published_at TEXT, provider_post_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT
-  )`).run();
+    video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT,
+    video_storage_key TEXT, video_bytes INTEGER, privacy_level TEXT DEFAULT 'SELF_ONLY',
+    publish_status TEXT, publish_error TEXT, provider_video_id TEXT, published_url TEXT, approved_at TEXT
+  )\`).run();
   const columns = await env.DB.prepare("PRAGMA table_info(social_posts)").all();
   const existing = new Set((columns.results || []).map(column => column.name));
-  for (const [name, type] of [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"]]) {
-    if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
-  }
+  const additions = [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"],["video_storage_key","TEXT"],["video_bytes","INTEGER"],["privacy_level","TEXT DEFAULT 'SELF_ONLY'"],["publish_status","TEXT"],["publish_error","TEXT"],["provider_video_id","TEXT"],["published_url","TEXT"],["approved_at","TEXT"]];
+  for (const [name, type] of additions) if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
+  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_accounts (
+    platform TEXT PRIMARY KEY, open_id TEXT NOT NULL, username TEXT, display_name TEXT,
+    access_token_encrypted TEXT NOT NULL, refresh_token_encrypted TEXT NOT NULL,
+    access_expires_at TEXT, refresh_expires_at TEXT, scope TEXT,
+    privacy_options_json TEXT DEFAULT '[]', creator_info_json TEXT,
+    connected_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )\`).run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
+  await env.DB.prepare(\`CREATE TABLE IF NOT EXISTS social_analytics (
+    video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
+    likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
+    video_created_at TEXT, fetched_at TEXT NOT NULL
+  )\`).run();
+}
+async function processSocialQueue(env) {
+  requireDatabase(env);
+  await ensureSocialSchema(env);
+  const now = new Date().toISOString();
+  const due = await env.DB.prepare("SELECT * FROM social_posts WHERE platform = 'tiktok' AND status = 'queued' AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 3").bind(now).all();
+  for (const post of due.results || []) {
+    const claim = await env.DB.prepare("UPDATE social_posts SET status = 'publishing', updated_at = ? WHERE id = ? AND status = 'queued'").bind(now, post.id).run();
+    if (!claim.meta?.changes) continue;
+    try {
+      const result = await publishTikTokVideo(env, post);
+      const complete = result.status === "PUBLISH_COMPLETE";
+      await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, updated_at = ?, publish_error = NULL WHERE id = ?")
+        .bind(complete ? "published" : "publishing", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), post.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
+        .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
+    }
+  }
+  const pending = await env.DB.prepare("SELECT id, provider_post_id FROM social_posts WHERE status = 'publishing' AND provider_post_id IS NOT NULL ORDER BY updated_at ASC LIMIT 5").all();
+  for (const post of pending.results || []) {
+    try {
+      const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
+      const state = status.status || "PROCESSING_UPLOAD";
+      const complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
+      await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, publish_error = ?, published_url = COALESCE(?, published_url), updated_at = ? WHERE id = ?")
+        .bind(state, complete ? "published" : failed ? "failed" : "publishing", complete ? 1 : 0, new Date().toISOString(),
+          failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen").slice(0, 1000) : null,
+          status.share_url || null, new Date().toISOString(), post.id).run();
+    } catch (error) {
+      await env.DB.prepare("UPDATE social_posts SET publish_error = ?, updated_at = ? WHERE id = ?")
+        .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
+    }
+  }
+}
+async function tiktokRedirectUri(request, env) {
+  return env.TIKTOK_REDIRECT_URI || new URL("/api/social/tiktok/callback", request.url).toString();
 }
 function json(data, status = 200, extra = {}) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store", ...extra } });
