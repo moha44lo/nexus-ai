@@ -225,8 +225,8 @@ function renderSocialResult(post){
  host.append(safeText("div","HASHTAGS: "+(post.hashtags||[]).map(x=>"#"+x).join(" "),"social-caption"));
  host.append(safeText("div","COVER: "+(post.cover_text||"")+" · CTA: "+(post.cta||""),"social-caption"));
  const videoPanel=document.createElement("section");videoPanel.className="social-video-panel";
- if(post.video_url){const video=document.createElement("video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=post.video_url;videoPanel.append(video);videoPanel.append(safeText("div","KI-Clip · "+(post.video_duration||5)+" Sekunden · 9:16 · 720p · Anbieter-Vorschau-Link","video-note"));const openVideo=document.createElement("a");openVideo.href=post.video_url;openVideo.target="_blank";openVideo.rel="noopener";openVideo.textContent="Video separat öffnen ↗";openVideo.className="secondary";videoPanel.append(openVideo);}
- else {const controls=document.createElement("div");controls.className="social-video-actions";const duration=document.createElement("select");duration.id="socialVideoDuration";[5,10,15].forEach(seconds=>{const option=document.createElement("option");option.value=String(seconds);option.textContent=seconds+" Sekunden · ca. $"+(seconds*.07).toFixed(2);duration.append(option);});controls.append(duration);const makeVideo=document.createElement("button");makeVideo.className="primary";makeVideo.disabled=post.video_status==="generating";makeVideo.textContent=post.video_status==="generating"?"VIDEO WIRD ERSTELLT …":"▶ KI-VIDEO ERSTELLEN";makeVideo.onclick=async()=>{if(!post.id)return;makeVideo.disabled=true;makeVideo.textContent="VIDEO ENGINE LÄUFT …";try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/video",{method:"POST",body:JSON.stringify({duration_seconds:Number(duration.value)})});Object.assign(post,d.post);renderSocialResult(post);await loadSocialPosts();toast("KI-Video wurde erstellt.");}catch(err){toast("Video: "+err.message);makeVideo.disabled=false;makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";}};controls.append(makeVideo);videoPanel.append(controls);videoPanel.append(safeText("div","Geschätzte Modellkosten bei 720p: $0.07 pro Sekunde. Generierung startet erst nach deinem Klick. Noch kein automatisches Posting.","video-note"));}
+ if(post.video_url){const video=document.createElement("video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=post.video_url;videoPanel.append(video);videoPanel.append(safeText("div","KI-Clip · "+(post.video_duration||5)+" Sekunden · 9:16 · 720p · sicher in NEXUS gespeichert","video-note"));const openVideo=document.createElement("a");openVideo.href=post.video_url;openVideo.target="_blank";openVideo.rel="noopener";openVideo.textContent="Video separat öffnen ↗";openVideo.className="secondary";videoPanel.append(openVideo);}
+ else {const controls=document.createElement("div");controls.className="social-video-actions";const duration=document.createElement("select");duration.id="socialVideoDuration";[5,10,15].forEach(seconds=>{const option=document.createElement("option");option.value=String(seconds);option.textContent=seconds+" Sekunden · ca. $"+(seconds*.07).toFixed(2);duration.append(option);});controls.append(duration);const makeVideo=document.createElement("button");makeVideo.className="primary";makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";makeVideo.onclick=async()=>{if(!post.id)return;makeVideo.disabled=true;makeVideo.textContent="VIDEO ENGINE LÄUFT …";try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/video",{method:"POST",body:JSON.stringify({duration_seconds:Number(duration.value)})});Object.assign(post,d.post);renderSocialResult(post);await loadSocialPosts();toast("KI-Video wurde erstellt.");}catch(err){toast("Video: "+err.message);makeVideo.disabled=false;makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";}};controls.append(makeVideo);videoPanel.append(controls);videoPanel.append(safeText("div","Geschätzte Modellkosten bei 720p: $0.07 pro Sekunde. Generierung startet erst nach deinem Klick. Noch kein automatisches Posting.","video-note"));}
  host.append(videoPanel);
  const actions=document.createElement("div");actions.className="social-actions";
  const copy=document.createElement("button");copy.className="secondary";copy.textContent="Caption kopieren";copy.onclick=async()=>{try{await navigator.clipboard.writeText(post.caption+"\n\n"+(post.hashtags||[]).map(x=>"#"+x).join(" "));toast("Caption kopiert.");}catch{toast("Kopieren nicht möglich – bitte Text markieren.");}};actions.append(copy);
@@ -299,7 +299,11 @@ async function ensureSocialSchema(env) {
   const accountColumns = await env.DB.prepare("PRAGMA table_info(social_accounts)").all();
   const accountExisting = new Set((accountColumns.results || []).map(column => column.name));
   if (!accountExisting.has("analytics_synced_at")) await env.DB.prepare("ALTER TABLE social_accounts ADD COLUMN analytics_synced_at TEXT").run();
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, session_hash TEXT NOT NULL DEFAULT '')").run();
+  const oauthColumns = await env.DB.prepare("PRAGMA table_info(social_oauth_states)").all();
+  if (!(oauthColumns.results || []).some(column => column.name === "session_hash")) {
+    await env.DB.prepare("ALTER TABLE social_oauth_states ADD COLUMN session_hash TEXT NOT NULL DEFAULT ''").run();
+  }
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_analytics (
     video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
     likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
@@ -503,11 +507,14 @@ export default {
       try {
         requireDatabase(env);
         await ensureSocialSchema(env);
+        if (!(await validSession(request, env))) return new Response("Bitte zuerst bei NEXUS anmelden und TikTok erneut verbinden.", { status: 401 });
+        const sessionToken = cookieValue(request, "nexus_session") || "";
+        const sessionHash = await hmac(env.NEXUS_SESSION_SECRET, "tiktok-oauth:" + sessionToken);
         const state = url.searchParams.get("state") || "";
         const code = url.searchParams.get("code") || "";
-        const saved = await env.DB.prepare("SELECT state, expires_at FROM social_oauth_states WHERE state = ?").bind(state).first();
+        const saved = await env.DB.prepare("SELECT state, expires_at, session_hash FROM social_oauth_states WHERE state = ?").bind(state).first();
         await env.DB.prepare("DELETE FROM social_oauth_states WHERE state = ?").bind(state).run();
-        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code) return new Response("TikTok OAuth state ungültig oder abgelaufen.", { status: 400 });
+        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code || !saved.session_hash || saved.session_hash !== sessionHash) return new Response("TikTok OAuth state ungültig, abgelaufen oder gehört zu einer anderen NEXUS-Sitzung.", { status: 400 });
         if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return new Response("TikTok-App-Schlüssel fehlen.", { status: 503 });
         const form = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, client_secret: env.TIKTOK_CLIENT_SECRET, code, grant_type: "authorization_code", redirect_uri: await tiktokRedirectUri(request, env) });
         const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
@@ -593,10 +600,12 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/api/social/tiktok/connect") {
         if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return json({ error: "TIKTOK_CLIENT_KEY und TIKTOK_CLIENT_SECRET fehlen in Cloudflare Secrets." }, 503);
+        const sessionToken = cookieValue(request, "nexus_session") || "";
+        const sessionHash = await hmac(env.NEXUS_SESSION_SECRET, "tiktok-oauth:" + sessionToken);
         const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
         const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await env.DB.prepare("DELETE FROM social_oauth_states WHERE expires_at <= ?").bind(new Date().toISOString()).run();
-        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at) VALUES (?, ?, ?)").bind(state, expires, new Date().toISOString()).run();
+        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at, session_hash) VALUES (?, ?, ?, ?)").bind(state, expires, new Date().toISOString(), sessionHash).run();
         const authorize = new URL("https://www.tiktok.com/v2/auth/authorize/");
         authorize.search = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, response_type: "code", scope: "user.info.basic,video.publish,video.list", redirect_uri: await tiktokRedirectUri(request, env), state }).toString();
         return Response.redirect(authorize.toString(), 302);
@@ -651,6 +660,9 @@ export default {
         return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], r2: Boolean(env.SOCIAL_MEDIA), tiktok: { configured: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), connected: Boolean(account), username: account?.username || "", displayName: account?.display_name || "", scope: account?.scope || "", expiresAt: account?.access_expires_at || null }, counts: result.results || [] });
       }
       if (request.method === "GET" && url.pathname === "/api/social/posts") {
+        const staleGeneration = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await env.DB.prepare("UPDATE social_posts SET video_status = 'failed', updated_at = ? WHERE video_status = 'generating' AND updated_at <= ?")
+          .bind(new Date().toISOString(), staleGeneration).run();
         const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, video_storage_key, video_bytes, privacy_level, publish_status, publish_error, provider_post_id, published_url, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
         return json({ posts: (result.results || []).map(row => ({ ...row, video_url: row.video_storage_key ? "/api/social/media/" + row.id : row.video_url, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
       }
@@ -673,27 +685,31 @@ export default {
         if (!["draft", "approved"].includes(row.status)) return json({ error: "Videos können nur für Entwürfe oder freigegebene Beiträge neu erstellt werden." }, 409);
         if (!env.AI?.run) return json({ error: "Workers AI ist nicht verfügbar." }, 503);
         if (!env.SOCIAL_MEDIA) return json({ error: "R2-Speicher ist noch nicht eingerichtet. Deployment mit SOCIAL_MEDIA-Bucket abwarten." }, 503);
-        const claim = await env.DB.prepare("UPDATE social_posts SET video_status = 'generating', updated_at = ? WHERE id = ? AND status IN ('draft','approved') AND (video_status IS NULL OR video_status <> 'generating')").bind(new Date().toISOString(), id).run();
+        const generationNow = new Date().toISOString();
+        const staleGeneration = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await env.DB.prepare("UPDATE social_posts SET video_status = 'failed', updated_at = ? WHERE id = ? AND video_status = 'generating' AND updated_at <= ?")
+          .bind(generationNow, id, staleGeneration).run();
+        const claim = await env.DB.prepare("UPDATE social_posts SET video_status = 'generating', updated_at = ? WHERE id = ? AND status IN ('draft','approved') AND (video_status IS NULL OR video_status IN ('failed','ready'))").bind(generationNow, id).run();
         if (!claim.meta?.changes) return json({ error: "Für diesen Beitrag läuft bereits eine Video-Generierung oder der Status hat sich geändert." }, 409);
         try {
           const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
-          const providerUrl = output?.result?.video || output?.video || output?.result?.url;
-          if (!providerUrl || !/^https:\/\//i.test(providerUrl)) throw new Error("Video-Modell hat keinen gültigen Video-Link zurückgegeben (" + (output?.state || "unknown") + ").");
-          const remote = await fetch(providerUrl);
-          if (!remote.ok || !remote.body) throw new Error("Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ").");
-          const declaredSize = Number(remote.headers.get("Content-Length") || 0);
-          if (declaredSize > 64 * 1024 * 1024) throw new Error("Der Clip ist größer als das derzeit unterstützte 64-MB-Limit.");
-          const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
-          const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
-          if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
-            await env.SOCIAL_MEDIA.delete(key);
-            throw new Error("Videodatei ist leer oder größer als das 64-MB-Limit.");
-          }
-          const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
-          await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
-            .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
-          if (row.video_storage_key && row.video_storage_key !== key) await env.SOCIAL_MEDIA.delete(row.video_storage_key);
-          return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
+        const providerUrl = output?.result?.video || output?.video || output?.result?.url;
+        if (!providerUrl || !/^https:\/\//i.test(providerUrl)) throw new Error("Video-Modell hat keinen gültigen Video-Link zurückgegeben (" + (output?.state || "unknown") + ").");
+        const remote = await fetch(providerUrl);
+        if (!remote.ok || !remote.body) throw new Error("Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ").");
+        const declaredSize = Number(remote.headers.get("Content-Length") || 0);
+        if (declaredSize > 64 * 1024 * 1024) throw new Error("Der Clip ist größer als das derzeit unterstützte 64-MB-Limit.");
+        const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
+        const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+        if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
+          await env.SOCIAL_MEDIA.delete(key);
+          throw new Error("Videodatei ist leer oder größer als das 64-MB-Limit.");
+        }
+        const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
+        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
+          .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
+        if (row.video_storage_key && row.video_storage_key !== key) await env.SOCIAL_MEDIA.delete(row.video_storage_key);
+        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
         } catch (error) {
           await env.DB.prepare("UPDATE social_posts SET video_status = ?, updated_at = ? WHERE id = ? AND video_status = 'generating'")
             .bind(row.video_storage_key ? "ready" : "failed", new Date().toISOString(), id).run();
@@ -704,7 +720,7 @@ export default {
         const body = await request.json();
         const input = normalizeSocialInput(body);
         const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
-        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\n");
+        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
         if (performanceContext) input.account_context = (input.account_context + "\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
@@ -732,7 +748,7 @@ export default {
         const body = await request.json().catch(() => ({}));
         const privacy = String(body.privacy_level || "SELF_ONLY");
         if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
-        if (!post.video_storage_key || post.video_status === "generating") return json({ error: "Bitte zuerst ein fertig gespeichertes KI-Video erstellen." }, 409);
+        if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
         if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
         if (action === "schedule" && (post.provider_post_id || post.publish_status)) return json({ error: "Dieser Beitrag wird bereits an TikTok übertragen und kann nicht mehr umgeplant werden." }, 409);
         if (action === "unschedule") {
@@ -743,11 +759,6 @@ export default {
         }
         if (action === "retry") {
           if (post.status !== "failed") return json({ error: "Nur fehlgeschlagene Veröffentlichungen können zurückgesetzt werden." }, 409);
-          if (post.provider_post_id) {
-            const remoteStatus = await fetchTikTokPublishStatus(env, post.provider_post_id);
-            const remoteState = remoteStatus.status || "PROCESSING_UPLOAD";
-            if (remoteState !== "FAILED") return json({ error: "TikTok verarbeitet diesen Beitrag noch oder hat ihn bereits veröffentlicht (" + remoteState + "). NEXUS setzt ihn nicht zurück, um Doppelposts zu vermeiden." }, 409);
-          }
           await env.DB.prepare("UPDATE social_posts SET status = 'approved', provider_post_id = NULL, provider_video_id = NULL, publish_status = NULL, publish_error = NULL, published_at = NULL, published_url = NULL, scheduled_for = NULL, approved_at = ?, updated_at = ? WHERE id = ? AND status = 'failed'")
             .bind(new Date().toISOString(), new Date().toISOString(), id).run();
           return json({ id, status: "approved", message: "Beitrag zurück auf Freigabe gesetzt. Du kannst erneut posten oder planen." });
