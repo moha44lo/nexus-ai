@@ -7,6 +7,7 @@ function mockAI({ failRole = null, score = 96, issues = [] } = {}) {
   const modelCalls = [];
   return {
     calls,
+    modelCalls,
     env: { AI: { run: async (model, input) => {
       modelCalls.push(model);
       const system = input.messages[0].content;
