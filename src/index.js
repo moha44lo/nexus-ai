@@ -1,5 +1,5 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
-import { createPlan, needsApproval, runBrowserPlan } from "./agent-runtime.js";
+import { createPlan, needsApproval, runBrowserPlan, validateBrowserUrl } from "./agent-runtime.js";
 import { compileSkill } from "./skill-engine.js";
 import { handleMcpRequest } from "./mcp-server.js";
 export { NEXUSWorkflow };
@@ -275,6 +275,13 @@ export default {
         const row = await env.DB.prepare("SELECT * FROM skills WHERE id = ? AND enabled = 1").bind(skillId).first();
         if (!row) return json({ error: "Skill nicht gefunden oder deaktiviert." }, 404);
         const skill = compileSkill(JSON.parse(row.definition_json));
+        const allowedSkillTools = new Set(["browser.navigate", "browser.inspect", "browser.click", "browser.fill", "browser.extract"]);
+        for (const step of skill.steps) {
+          if (!allowedSkillTools.has(step.tool)) return json({ error: "Dieses Skill-Tool ist in der aktuellen Runtime nicht verfügbar: " + step.tool }, 400);
+          if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);
+          if (["browser.click", "browser.fill"].includes(step.tool) && !step.args.selector) return json({ error: "CSS-Selektor fehlt." }, 400);
+          if (step.tool === "browser.fill" && typeof step.args.value !== "string") return json({ error: "Eingabewert fehlt." }, 400);
+        }
         const plan = { goal: skill.name, summary: skill.description, steps: skill.steps };
         const runId = crypto.randomUUID(), now = new Date().toISOString(), approvalRequired = needsApproval(plan);
         await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")
