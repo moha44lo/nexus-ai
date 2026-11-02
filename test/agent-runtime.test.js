@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateBrowserUrl, createPlan, needsApproval, classifyBrowserPage, searchWithFallback } from "../src/agent-runtime.js";
+import { validateBrowserUrl, createPlan, needsApproval, classifyBrowserPage, searchWithFallback, summarizeBrowserFailure } from "../src/agent-runtime.js";
 
 test("accepts public HTTPS destinations", () => {
   assert.equal(validateBrowserUrl("https://example.com/path"), "https://example.com/path");
@@ -126,4 +126,14 @@ test("search falls back to Bing when DuckDuckGo presents a CAPTCHA", async () =>
   assert.equal(result.provider, "bing");
   assert.equal(result.results.length, 1);
   assert.equal(result.attempts[0].classification, "captcha");
+});
+
+test("browser failures expose the real reason instead of an unknown-error fallback", () => {
+  assert.match(summarizeBrowserFailure([
+    { tool: "browser.search", status: "failed", output: { fallbackText: "Keine verifizierbaren Suchergebnisse erhalten. Provider-Versuche: duckduckgo=captcha, bing=no_results" } }
+  ]), /duckduckgo=captcha, bing=no_results/);
+  assert.match(summarizeBrowserFailure([
+    { tool: "browser.navigate", status: "blocked", output: { classification: "login_or_restricted", url: "https://example.com" } }
+  ]), /login_or_restricted/);
+  assert.equal(summarizeBrowserFailure([{ tool: "browser.inspect", status: "completed" }]), null);
 });
