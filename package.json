@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "db:init:local": "wrangler d1 execute nexus --local --file=./schema.sql",
     "db:init:remote": "wrangler d1 execute nexus --remote --file=./schema.sql",
-    "check": "node --check src/index.js && node --check src/runtime-errors.js && node --check src/quality-control.js && node --check src/model-output.js && node --check src/orchestrator.js && node --check src/nexus-workflow.js && node --check src/skill-engine.js && node --check src/agent-runtime.js && node --check src/mcp-server.js",
+    "check": "node --check src/index.js && node --check src/runtime-errors.js && node --check src/quality-control.js && node --check src/model-output.js && node --check src/orchestrator.js && node --check src/nexus-workflow.js && node --check src/skill-engine.js && node --check src/agent-runtime.js && node --check src/mcp-server.js && node --check src/social-autopilot.js",
     "test": "node --test"
   },
   "dependencies": {

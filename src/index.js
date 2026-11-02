@@ -5,6 +5,7 @@ import { handleMcpRequest } from "./mcp-server.js";
 import { extractWorkersAIText } from "./model-output.js";
 import { runCrew } from "./orchestrator.js";
 import { formatRuntimeError } from "./runtime-errors.js";
+import { normalizeSocialInput, generateSocialPackage } from "./social-autopilot.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -38,6 +39,15 @@ const PAGE = String.raw`<!doctype html>
 @media(max-width:680px){.shell{display:block;padding-bottom:68px}.sidebar{position:fixed;top:auto;bottom:0;left:0;right:0;width:100%;height:66px;padding:5px 5px calc(5px + env(safe-area-inset-bottom));border-right:0;border-top:1px solid #2b4054;background:#0a111bf5;backdrop-filter:blur(20px);display:block}.brand,.rail-label,.rail-bottom{display:none}.nav{height:100%;display:flex;align-items:center;justify-content:space-around;gap:1px}.nav button{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:3px 1px;font-size:7px}.nav button .nav-icon{width:23px;height:22px;border:0;font-size:16px}.main{padding-bottom:0}.topbar{height:54px;padding:0 11px}.top-context{font-size:7px;gap:6px}.top-context strong{font-size:7px}.top-clock{display:none}.top-actions{gap:5px}.command-launch{padding:6px 7px;font-size:0}.command-launch span{font-size:15px}.command-launch kbd{display:none}.top-new{padding:7px;font-size:10px}.top-new span{display:none}.avatar{width:27px;height:27px}.content{padding:19px 12px 30px}.deck-heading{align-items:flex-end;margin-bottom:20px}.deck-heading h1{font-size:42px;letter-spacing:-2.5px;margin:12px 0 8px}.deck-heading p{font-size:9px;max-width:230px}.deck-index{padding-left:10px}.deck-index strong{font-size:25px}.deck-index span,.deck-index small{font-size:6px;letter-spacing:1px}.command-stage{padding:14px 12px 12px}.stage-top{font-size:7px;letter-spacing:1px}.segmented button{padding:6px 7px;font-size:7px}.stage-prompt{margin:21px 0 14px;gap:9px}.prompt-symbol{font-size:26px}.stage-prompt h2{font-size:16px}.stage-prompt p{font-size:8px}.composer{padding:9px}.composer textarea{font-size:12px;min-height:78px}.composer-controls{align-items:flex-start;flex-direction:column}.composer-controls>span{font-size:6px}.composer-controls>div{width:100%;justify-content:flex-end}.composer-controls .secondary{font-size:7px;padding:9px 7px}.composer-controls .primary{padding:9px 10px;font-size:8px}.mission-presets{grid-template-columns:1fr 1fr;gap:6px}.mission-presets button{padding:9px 7px;font-size:7px;gap:6px}.mission-presets i{font-size:13px}.deck-lower{gap:10px;margin-top:12px}.section-cap{height:37px;padding:0 10px;font-size:7px;letter-spacing:1px}.chatlog{height:210px;padding:10px}.bubble{max-width:96%;font-size:10px;padding:10px}.telemetry-grid{grid-template-columns:1fr 1fr}.telemetry-cell{min-height:85px;padding:12px}.telemetry-cell strong{font-size:24px}.telemetry-cell small{font-size:6px}.telemetry-cell span{font-size:7px}.network-strip{margin-top:10px;overflow:hidden}.network-flow{padding:13px 10px 5px;overflow-x:auto;justify-content:flex-start}.network-node{min-width:max-content}.network-link{min-width:14px;flex:0 0 14px}.network-node b{font-size:7px}.network-node small{font-size:6px}.network-glyph{width:26px;height:26px}.deck-bottom-grid{grid-template-columns:1fr;gap:10px;margin-top:10px}.deck-list .list{padding:5px 10px}.view:not(#homeView){padding-top:25px}.toolbar-title{font-size:30px}.form-row{grid-template-columns:1fr}.swarm-banner{padding:17px 14px}.swarm-banner h2{font-size:17px}.swarm-banner p{font-size:9px}.swarm-orbit{width:65px;height:65px}.swarm-orbit span{font-size:25px}.swarm-agent{grid-column:span 6;padding:12px;min-height:180px}.swarm-agent h2{font-size:12px}.swarm-agent p{font-size:8px}.swarm-agent .model-id{font-size:7px!important}.architecture-head{display:block}.architecture-head .tag{display:inline-block;margin-top:8px}.architecture-flow{grid-template-columns:1fr 1fr;gap:6px}.engine-node{padding:9px}.engine-node strong{font-size:9px}.engine-node small,.engine-node code{font-size:7px}.swarm-stats{gap:5px}.swarm-stat{padding:9px}.swarm-stat b{font-size:16px}.swarm-stat span{font-size:7px}.evolution-track{grid-template-columns:1fr 1fr}.login-card{padding:30px 23px}.login-wrap{padding:15px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
+
+/* Social Autopilot workspace */
+.social-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:end;margin:12px 0 24px;padding:26px;border:1px solid #294056;border-radius:22px;background:radial-gradient(circle at 85% 20%,#244d5d66,transparent 35%),linear-gradient(135deg,#121e2b,#0c121c)}
+.social-hero h1{font-size:clamp(32px,5vw,54px);line-height:1.02;letter-spacing:-.055em;margin:10px 0}.social-hero h1 em{font-style:normal;color:var(--cyan)}.social-hero p{color:var(--muted);max-width:650px;margin:0}
+.social-kicker{font-size:10px;letter-spacing:.16em;color:var(--acid);font-weight:800}.social-live{border:1px solid #315346;background:#12251e;color:#8cf0b9;border-radius:99px;padding:8px 12px;font-size:10px;letter-spacing:.1em;white-space:nowrap}
+.social-layout{display:grid;grid-template-columns:minmax(280px,.78fr) minmax(0,1.22fr);gap:16px;align-items:start}.social-form{display:grid;gap:13px}.social-field{display:grid;gap:6px}.social-field label{font-size:10px;color:#9cabbc;letter-spacing:.12em;font-weight:750}.social-field input,.social-field select,.social-field textarea{width:100%;border:1px solid var(--line);background:#0b111a;color:var(--text);border-radius:11px;padding:12px;outline:none}.social-field input:focus,.social-field select:focus,.social-field textarea:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #5de4ff16}.social-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.social-submit{width:100%;padding:14px;font-weight:850;letter-spacing:.04em}.social-output{min-height:360px}.social-empty{min-height:300px;display:grid;place-items:center;text-align:center;color:var(--muted);padding:28px;border:1px dashed #334357;border-radius:16px}.social-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:6px}.social-result{display:grid;gap:14px}.social-result h2{font-size:23px;line-height:1.15;margin:0}.social-result .hook{font-size:17px;color:var(--cyan);font-weight:750}.social-scenes{display:grid;gap:9px}.social-scene{padding:12px;border:1px solid var(--line);background:#0c131d;border-radius:12px}.social-scene b{color:var(--acid);font-size:10px;letter-spacing:.1em}.social-scene p{margin:5px 0;color:#d4dfeb}.social-meta{display:flex;flex-wrap:wrap;gap:7px}.social-chip{border:1px solid #304153;border-radius:99px;padding:5px 9px;color:#b9c9d9;font-size:10px}.social-caption{white-space:pre-wrap;overflow-wrap:anywhere;color:#d8e3ee;background:#0b111a;padding:13px;border:1px solid var(--line);border-radius:12px}.social-actions{display:flex;flex-wrap:wrap;gap:8px}.social-list-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}.social-list-item:last-child{border:0}.social-list-item strong{display:block}.social-list-item small{display:block;color:var(--muted);margin-top:3px}.social-status{font-size:9px;letter-spacing:.1em;color:var(--acid)}
+@media(max-width:900px){.social-layout{grid-template-columns:1fr}.social-hero{grid-template-columns:1fr}.social-live{justify-self:start}}
+@media(max-width:520px){.social-two{grid-template-columns:1fr}.social-hero{padding:19px}.social-list-item{grid-template-columns:1fr}.social-actions button{flex:1}}
+
 </style></head>
 <body>
 <div id="loginView" class="login-wrap">
@@ -56,6 +66,7 @@ const PAGE = String.raw`<!doctype html>
   <nav class="nav">
    <button class="active" data-view="home"><span class="nav-icon">⌂</span><span>Command</span></button>
    <button data-view="automations"><span class="nav-icon">⟳</span><span>Automations</span></button>
+   <button data-view="social"><span class="nav-icon">▶</span><span>Social Autopilot</span><span class="nav-count">NEW</span></button>
    <button data-view="agents"><span class="nav-icon">✳</span><span>Neural grid</span></button>
    <button data-view="memory"><span class="nav-icon">◈</span><span>Memory</span></button>
    <button data-view="activity"><span class="nav-icon">▤</span><span>Mission log</span></button>
@@ -90,7 +101,32 @@ const PAGE = String.raw`<!doctype html>
    </div></div>
    <div class="deck-bottom-grid"><section class="deck-list"><div class="section-cap"><span>04 / RECENT MISSIONS</span><button data-go="activity">MISSION LOG ↗</button></div><div id="recentRuns" class="list"><div class="empty">No missions recorded yet.</div></div></section><section class="deck-list"><div class="section-cap"><span>05 / AUTOMATION QUEUE</span><button data-go="automations">MANAGE ↗</button></div><div id="recentSchedules" class="list"><div class="empty">No scheduled automations.</div></div></section></div>
   </div>
-  <div id="automationsView" class="view content"><div class="eyebrow">AUTOMATION ENGINE</div><h1 class="toolbar-title">Automationen</h1><p class="page-sub">Wiederkehrende Aufgaben planen und automatisch ausführen lassen.</p><div class="card wide-card"><div class="card-head"><h2>Neue Automation</h2><span class="tag">Cloud scheduler · 5-Minuten-Prüfung</span></div><form id="scheduleForm"><div class="form-row"><input id="scheduleName" class="field" placeholder="Name der Automation" required><select id="scheduleInterval" class="field"><option value="60">Jede Stunde</option><option value="360">Alle 6 Stunden</option><option value="720">Alle 12 Stunden</option><option value="1440">Täglich</option><option value="10080">Wöchentlich</option></select></div><textarea id="scheduleTask" class="field" rows="3" placeholder="Was soll NEXUS regelmässig erledigen?" required></textarea><button class="primary" type="submit">Automation speichern ＋</button></form></div><div class="card wide-card" style="margin-top:15px"><div class="card-head"><h2>Gespeicherte Automationen</h2><button id="refreshSchedules" class="secondary">Aktualisieren</button></div><div id="scheduleList" class="list"><div class="empty">Lade Automationen …</div></div></div><p class="muted small" style="margin-top:12px">Hinweis: Browser-Klicks und Formulareingaben benötigen weiterhin deine Freigabe. Nicht unterstützte Aktionen werden nicht als erledigt ausgegeben.</p></div>
+  <div id="socialView" class="view content">
+  <div class="social-hero"><div><div class="social-kicker">NEXUS CREATIVE SYSTEM / 01</div><h1>Social, <em>on autopilot.</em></h1><p>Aus einer Nische wird ein komplettes Short-Form-Content-Briefing: Hook, Skript, Szenen, Voiceover-Text, Caption, Hashtags und Cover-Idee.</p></div><div class="social-live">● CONTENT ENGINE READY</div></div>
+  <div class="social-layout">
+   <section class="card wide-card"><div class="card-head"><h2>Neue Content-Mission</h2><span class="tag">AI STUDIO</span></div>
+    <form id="socialForm" class="social-form">
+     <div class="social-field"><label for="socialNiche">CONTENT-NISCHE</label><input id="socialNiche" value="Aesthetic & unglaubliche Reiseorte" maxlength="180" required placeholder="z. B. Aesthetic travel destinations"></div>
+     <div class="social-two">
+      <div class="social-field"><label for="socialPlatform">PLATTFORM</label><select id="socialPlatform"><option value="tiktok">TikTok</option><option value="instagram">Instagram Reels</option><option value="youtube">YouTube Shorts</option></select></div>
+      <div class="social-field"><label for="socialLanguage">SPRACHE</label><select id="socialLanguage"><option value="de">Deutsch</option><option value="en">English</option><option value="fr">Français</option><option value="it">Italiano</option><option value="es">Español</option></select></div>
+     </div>
+     <div class="social-two">
+      <div class="social-field"><label for="socialObjective">ZIEL</label><select id="socialObjective"><option value="growth">Reichweite aufbauen</option><option value="education">Informieren</option><option value="entertainment">Unterhalten</option><option value="traffic">Traffic erzeugen</option><option value="sales">Verkäufe erzielen</option></select></div>
+      <div class="social-field"><label for="socialDuration">VIDEO-LÄNGE</label><select id="socialDuration"><option value="15">15 Sekunden</option><option value="25" selected>25 Sekunden</option><option value="35">35 Sekunden</option><option value="45">45 Sekunden</option><option value="60">60 Sekunden</option></select></div>
+     </div>
+     <div class="social-field"><label for="socialAudience">ZIELGRUPPE</label><input id="socialAudience" value="Reisebegeisterte zwischen 18 und 34" maxlength="180"></div>
+     <div class="social-field"><label for="socialTone">STIL / BRAND VOICE</label><input id="socialTone" value="cinematic, premium, überraschend, emotional" maxlength="180"></div>
+     <div class="social-field"><label for="socialContext">ZUSÄTZLICHER KONTEXT (OPTIONAL)</label><textarea id="socialContext" rows="2" maxlength="500" placeholder="Bevorzugte Bildsprache, Accountname, No-Gos ..."></textarea></div>
+     <button id="socialGenerate" class="primary social-submit" type="submit">✳ CONTENT-PAKET GENERIEREN ↗</button>
+     <p class="muted small">Erstellt zunächst ein vollständiges Produktionsbriefing. Ein fertiges MP4 und automatisches Posting sind noch nicht Teil dieser Testversion.</p>
+    </form>
+   </section>
+   <section class="card wide-card social-output"><div class="card-head"><h2>Creative Output</h2><button id="socialRefresh" class="secondary" type="button">Entwürfe ↻</button></div><div id="socialResult" class="social-empty"><div><strong>Deine nächste Content-Idee beginnt hier.</strong>Gib NEXUS eine Nische und starte die erste Mission.</div></div></section>
+  </div>
+  <section class="card wide-card" style="margin-top:16px"><div class="card-head"><h2>Content Library</h2><span id="socialCount" class="tag">0 ENTWÜRFE</span></div><div id="socialPosts" class="list"><div class="empty">Noch keine Entwürfe gespeichert.</div></div></section>
+ </div>
+ <div id="automationsView" class="view content"><div class="eyebrow">AUTOMATION ENGINE</div><h1 class="toolbar-title">Automationen</h1><p class="page-sub">Wiederkehrende Aufgaben planen und automatisch ausführen lassen.</p><div class="card wide-card"><div class="card-head"><h2>Neue Automation</h2><span class="tag">Cloud scheduler · 5-Minuten-Prüfung</span></div><form id="scheduleForm"><div class="form-row"><input id="scheduleName" class="field" placeholder="Name der Automation" required><select id="scheduleInterval" class="field"><option value="60">Jede Stunde</option><option value="360">Alle 6 Stunden</option><option value="720">Alle 12 Stunden</option><option value="1440">Täglich</option><option value="10080">Wöchentlich</option></select></div><textarea id="scheduleTask" class="field" rows="3" placeholder="Was soll NEXUS regelmässig erledigen?" required></textarea><button class="primary" type="submit">Automation speichern ＋</button></form></div><div class="card wide-card" style="margin-top:15px"><div class="card-head"><h2>Gespeicherte Automationen</h2><button id="refreshSchedules" class="secondary">Aktualisieren</button></div><div id="scheduleList" class="list"><div class="empty">Lade Automationen …</div></div></div><p class="muted small" style="margin-top:12px">Hinweis: Browser-Klicks und Formulareingaben benötigen weiterhin deine Freigabe. Nicht unterstützte Aktionen werden nicht als erledigt ausgegeben.</p></div>
  <div id="agentsView" class="view content"><div class="eyebrow">NEXUS SWARM INTELLIGENCE</div><h1 class="toolbar-title">Agenten-Schwarm</h1><p class="page-sub">Acht unterschiedliche Modellfamilien. Ein Orchestrator. Ein kontrollierter Verbesserungszyklus. Ein finales Quality Gate.</p><div class="swarm-banner"><div><span class="eyebrow">SELF-IMPROVING CORE</span><h2>8 KI-Modelle. Ein gemeinsamer Intelligence-Core.</h2><p>Acht eigenständige Modell-Backends analysieren dieselbe Aufgabe parallel. NEXUS vereint ihre Erkenntnisse, lässt den Entwurf unabhängig prüfen und verbessert ihn in maximal zwei kontrollierten Runden.</p></div><div class="swarm-orbit"><span>✳</span><i></i><b></b></div></div><div class="grid swarm-grid"><div class="card swarm-agent" data-index="01"><div class="agent-symbol">S</div><h2>Strategist</h2><p class="muted small">Strategie, Ziele, Prioritäten und Abhängigkeiten.</p><span class="tag">PLANUNG</span><small class="model-id">@cf/moonshotai/kimi-k2.6</small></div><div class="card swarm-agent" data-index="02"><div class="agent-symbol">R</div><h2>Researcher</h2><p class="muted small">Fakten, Quellenlage, Belege und offene Fragen.</p><span class="tag">RECHERCHE</span><small class="model-id">@cf/meta/llama-4-scout-17b-16e-instruct</small></div><div class="card swarm-agent" data-index="03"><div class="agent-symbol">F</div><h2>Specialist</h2><p class="muted small">Fachwissen, Lösungswege und Umsetzung.</p><span class="tag">EXPERTISE</span><small class="model-id">@cf/google/gemma-4-26b-a4b-it</small></div><div class="card swarm-agent" data-index="04"><div class="agent-symbol">A</div><h2>Analyst</h2><p class="muted small">Daten, Zahlen, Kosten und Plausibilität.</p><span class="tag">ANALYSE</span><small class="model-id">@cf/openai/gpt-oss-120b</small></div><div class="card swarm-agent" data-index="05"><div class="agent-symbol">C</div><h2>Critic</h2><p class="muted small">Schwachstellen, Widersprüche und Alternativen.</p><span class="tag">KRITIK</span><small class="model-id">@cf/deepseek-ai/deepseek-r1-distill-qwen-32b</small></div><div class="card swarm-agent" data-index="06"><div class="agent-symbol">X</div><h2>Red Team</h2><p class="muted small">Stresstest, Risiken und Gegenargumente.</p><span class="tag">STRESSTEST</span><small class="model-id">@cf/qwen/qwq-32b</small></div><div class="card swarm-agent" data-index="07"><div class="agent-symbol">◇</div><h2>Architect</h2><p class="muted small">Gesamtarchitektur, Reihenfolge und Abhängigkeiten.</p><span class="tag">SYSTEMDESIGN</span><small class="model-id">@cf/nvidia/nemotron-3-120b-a12b</small></div><div class="card swarm-agent" data-index="08"><div class="agent-symbol">↗</div><h2>Optimizer</h2><p class="muted small">Qualität, Effizienz und Wirkung verbessern.</p><span class="tag">OPTIMIERUNG</span><small class="model-id">@cf/zai-org/glm-4.7-flash</small></div><section class="card swarm-architecture"><div class="architecture-head"><div><div class="eyebrow">NEURAL ORCHESTRATION LAYER</div><h2 style="margin:6px 0 0;font-size:18px">Die Engine hinter dem Schwarm</h2><p class="muted small">Die acht Spezialisten liefern parallel. Vier zusätzliche Modell-Aufgaben führen zusammen, prüfen, verbessern und sichern das finale Ergebnis.</p></div><span class="tag">12 MODEL CALL ROLES</span></div><div class="architecture-flow"><div class="engine-node"><span class="node-icon">✳</span><strong>Meta-Orchestrator</strong><small>GLM 5.3 · Berichte zusammenführen</small><code>@cf/zai-org/glm-5.3</code></div><div class="engine-node"><span class="node-icon">⌕</span><strong>Independent Reviewer</strong><small>DeepSeek V4 Flash · Qualitätskritik</small><code>@cf/deepseek-ai/deepseek-v4-flash-0731</code></div><div class="engine-node"><span class="node-icon">⟳</span><strong>Evolution Refiner</strong><small>Kimi K2.6 · gezielte Verbesserung</small><code>@cf/moonshotai/kimi-k2.6</code></div><div class="engine-node"><span class="node-icon">✓</span><strong>Final Quality Gate</strong><small>GPT-OSS 120B · finale Prüfung</small><code>@cf/openai/gpt-oss-120b</code></div></div><div class="swarm-stats"><div class="swarm-stat"><b>08</b><span>Spezialisten-Modelle</span></div><div class="swarm-stat"><b>02</b><span>maximale Evolutionsrunden</span></div><div class="swarm-stat"><b>01</b><span>finales Quality Gate</span></div></div></section><div class="card wide-card evolution-card"><div class="card-head"><h2>⟳ Evolution Loop</h2><span class="tag">MAX. 2 RUNDEN</span></div><div class="evolution-track"><div><b>01</b><strong>Entwurf</strong><small>Agenten vereinen Erkenntnisse</small></div><div><b>02</b><strong>Kritik</strong><small>Richter findet Lücken</small></div><div><b>03</b><strong>Verbesserung</strong><small>Refiner korrigiert gezielt</small></div><div><b>04</b><strong>Quality Gate</strong><small>Finale Prüfung</small></div></div><p class="muted small">Der Kreislauf stoppt bei einem starken Ergebnis oder nach zwei Runden. Fehlende externe Belege werden sichtbar markiert – niemals erfunden.</p></div><div class="card wide-card"><h2>Orchestrator & Execution Engine</h2><p class="muted small">Koordiniert acht Agenten, protokolliert jeden Schritt und führt die Berichte zusammen. Browser-Recherche bleibt separat und wird nur dann als belegt dargestellt, wenn echte Seiteninhalte ausgewertet wurden. Externe Aktionen benötigen weiterhin deine Freigabe.</p></div></div></div>
  <div id="memoryView" class="view content"><div class="eyebrow">PERSISTENT CONTEXT</div><h1 class="toolbar-title">Gedächtnis</h1><p class="page-sub">Fakten, die du ausdrücklich für spätere Aufgaben gespeichert hast.</p><div class="card wide-card"><div class="card-head"><h2>Gespeicherte Fakten</h2><button id="addMemory" class="primary">＋ Fakt speichern</button></div><div id="memoryList" class="list"><div class="empty">Lade Gedächtnis …</div></div></div></div>
  <div id="activityView" class="view content"><div class="eyebrow">EXECUTION LOG</div><h1 class="toolbar-title">Aktivität</h1><p class="page-sub">Transparente Protokolle für Agentenläufe und Automation.</p><div class="card wide-card"><div class="card-head"><h2>Aufgabenverlauf</h2><button id="refreshRuns" class="secondary">Aktualisieren</button></div><div id="runList" class="list"><div class="empty">Lade Verlauf …</div></div></div></div>
@@ -105,7 +141,7 @@ const chat=$("chat");
 async function api(path,options={}){const response=await fetch(path,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok)throw new Error(data.error||"Anfrage fehlgeschlagen");return data;}
 function toast(message){const el=$("toast");el.textContent=message;el.classList.remove("hidden");setTimeout(()=>el.classList.add("hidden"),2600);}
 function bubble(text,who=""){const el=document.createElement("div");el.className="bubble "+who;el.textContent=text;chat.appendChild(el);chat.scrollTop=chat.scrollHeight;return el;}
-function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
+function showView(view){currentView=view;document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));$(view+"View").classList.add("active");document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view===view));$("crumb").textContent=({home:"Übersicht",automations:"Automationen",social:"Social Autopilot",agents:"Agenten-Team",memory:"Gedächtnis",activity:"Aktivität"})[view];if(view==="social"){loadSocialPosts();loadSocialStatus();}if(view==="automations")loadSchedules();if(view==="agents")loadRuns();if(view==="memory")loadMemory();if(view==="activity")loadRuns();}
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>showView(b.dataset.view));
 document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>showView(b.dataset.go));
 
@@ -113,6 +149,7 @@ const commandItems=[
  {label:"Zur Übersicht",detail:"Dashboard öffnen",run:()=>showView("home")},
  {label:"Agenten-Team",detail:"Rollen und Orchestrierung",run:()=>showView("agents")},
  {label:"Automationen",detail:"Zeitpläne verwalten",run:()=>showView("automations")},
+ {label:"Social Autopilot",detail:"TikTok, Reels und Shorts produzieren",run:()=>showView("social")},
  {label:"Gedächtnis",detail:"Gespeicherte Fakten",run:()=>showView("memory")},
  {label:"Aktivitätsverlauf",detail:"Ausführungen und Status",run:()=>showView("activity")},
  {label:"Neue Unterhaltung",detail:"Frischen Chat starten",run:()=>createConversation()},
@@ -152,10 +189,72 @@ $("scheduleForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/sche
 $("refreshSchedules").onclick=loadSchedules;$("refreshRuns").onclick=loadRuns;
 $("addMemory").onclick=async()=>{const fact=prompt("Was soll NEXUS dauerhaft speichern?");if(!fact)return;try{await api("/api/memory",{method:"POST",body:JSON.stringify({fact})});toast("Fakt gespeichert.");loadMemory();refreshOverview();}catch(e){toast(e.message);}};
 async function restoreSession(){try{const state=await api("/api/session");if(state.authenticated)await enter();}catch(error){console.warn("NEXUS session restore failed:",error);}}
+
+let socialCurrentPost=null;
+function safeText(tag,text,className){const el=document.createElement(tag);if(className)el.className=className;el.textContent=text||"";return el;}
+function renderSocialResult(post){
+ const host=$("socialResult");host.className="social-result";host.innerHTML="";
+ const title=safeText("h2",post.title);host.append(title);
+ host.append(safeText("div",post.hook,"hook"));
+ const meta=document.createElement("div");meta.className="social-meta";
+ [String(post.platform||"tiktok").toUpperCase(),String(post.duration_seconds||25)+" SEC",String(post.objective||"growth").toUpperCase()].forEach(x=>meta.append(safeText("span",x,"social-chip")));host.append(meta);
+ host.append(safeText("div",post.script,"social-caption"));
+ host.append(safeText("h3","SCENE-BY-SCENE PRODUCTION PLAN"));
+ const scenes=document.createElement("div");scenes.className="social-scenes";
+ (post.scenes||[]).forEach(scene=>{const card=document.createElement("div");card.className="social-scene";card.append(safeText("b",scene.time));card.append(safeText("p","VISUAL: "+scene.visual));card.append(safeText("p","VOICEOVER: "+scene.voiceover));if(scene.on_screen_text)card.append(safeText("p","ON SCREEN: "+scene.on_screen_text));scenes.append(card);});host.append(scenes);
+ host.append(safeText("h3","CAPTION"));host.append(safeText("div",post.caption,"social-caption"));
+ host.append(safeText("div","HASHTAGS: "+(post.hashtags||[]).map(x=>"#"+x).join(" "),"social-caption"));
+ host.append(safeText("div","COVER: "+(post.cover_text||"")+" · CTA: "+(post.cta||""),"social-caption"));
+ const actions=document.createElement("div");actions.className="social-actions";
+ const copy=document.createElement("button");copy.className="secondary";copy.textContent="Caption kopieren";copy.onclick=async()=>{try{await navigator.clipboard.writeText(post.caption+"\n\n"+(post.hashtags||[]).map(x=>"#"+x).join(" "));toast("Caption kopiert.");}catch{toast("Kopieren nicht möglich – bitte Text markieren.");}};actions.append(copy);
+ const approve=document.createElement("button");approve.className="primary";approve.textContent="Entwurf freigeben";approve.onclick=async()=>{if(!post.id)return;approve.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/approve",{method:"POST",body:"{}"});post.status="approved";toast("Redaktionell freigegeben – noch nicht veröffentlicht.");await loadSocialPosts();}catch(e){toast(e.message);approve.disabled=false;}};actions.append(approve);
+ host.append(actions);
+}
+async function loadSocialStatus(){try{const d=await api("/api/social/status");const t=document.querySelector(".social-live");if(t)t.textContent="● CONTENT ENGINE READY · PUBLISHING LOCKED";}catch(e){toast("Social-Status: "+e.message);}}
+async function loadSocialPosts(){
+ try{const d=await api("/api/social/posts");const host=$("socialPosts");host.innerHTML="";const posts=d.posts||[];$("socialCount").textContent=posts.length+" ENTWÜRFE";if(!posts.length){host.innerHTML='<div class="empty">Noch keine Entwürfe gespeichert.</div>';return;}
+ posts.forEach(post=>{const row=document.createElement("div");row.className="social-list-item";const info=document.createElement("div");info.append(safeText("strong",post.title));info.append(safeText("small",post.platform.toUpperCase()+" · "+post.niche+" · "+new Date(post.created_at).toLocaleString("de-CH")));const status=safeText("span",post.status.toUpperCase(),"social-status");const actions=document.createElement("div");actions.className="social-actions";const open=document.createElement("button");open.className="secondary";open.textContent="Öffnen";open.onclick=()=>{socialCurrentPost=post;renderSocialResult(post);$("socialResult").scrollIntoView({behavior:"smooth",block:"start"});};actions.append(open,status);row.append(info,actions);host.append(row);});
+ }catch(e){$("socialPosts").textContent="Fehler: "+e.message;}
+}
+$("socialRefresh").onclick=()=>loadSocialPosts();
+$("socialForm").onsubmit=async e=>{
+ e.preventDefault();const button=$("socialGenerate");button.disabled=true;button.textContent="NEXUS PRODUZIERT …";
+ $("socialResult").className="social-empty";$("socialResult").textContent="Creative Engine läuft: Hook, Dramaturgie, Szenen, Caption und Hashtags werden erstellt.";
+ const payload={platform:$("socialPlatform").value,niche:$("socialNiche").value,language:$("socialLanguage").value,objective:$("socialObjective").value,duration_seconds:Number($("socialDuration").value),audience:$("socialAudience").value,tone:$("socialTone").value,account_context:$("socialContext").value};
+ try{const d=await api("/api/social/generate",{method:"POST",body:JSON.stringify(payload)});socialCurrentPost=d.post;renderSocialResult(d.post);await loadSocialPosts();toast("Content-Paket gespeichert.");}
+ catch(err){$("socialResult").className="social-empty";$("socialResult").textContent="Generierung fehlgeschlagen: "+err.message;}
+ finally{button.disabled=false;button.textContent="✳ CONTENT-PAKET GENERIEREN ↗";}
+};
+
 restoreSession();
 </script></body></html>`;
 
 
+async function ensureSocialSchema(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_posts (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
+    niche TEXT NOT NULL,
+    objective TEXT NOT NULL DEFAULT 'growth',
+    language TEXT NOT NULL DEFAULT 'de',
+    title TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    script TEXT NOT NULL,
+    scenes_json TEXT NOT NULL DEFAULT '[]',
+    caption TEXT NOT NULL,
+    hashtags_json TEXT NOT NULL DEFAULT '[]',
+    cta TEXT NOT NULL DEFAULT '',
+    cover_text TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'queued', 'published', 'failed')),
+    scheduled_for TEXT,
+    published_at TEXT,
+    provider_post_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
+}
 function json(data, status = 200, extra = {}) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store", ...extra } });
 }
@@ -357,6 +456,34 @@ export default {
       }
 
       requireDatabase(env);
+      if (url.pathname.startsWith("/api/social/")) await ensureSocialSchema(env);
+
+      if (request.method === "GET" && url.pathname === "/api/social/status") {
+        const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
+        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/posts") {
+        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
+        return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/generate") {
+        const body = await request.json();
+        const input = normalizeSocialInput(body);
+        const generated = await generateSocialPackage(env, input);
+        const id = crypto.randomUUID(), now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO social_posts (id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")
+          .bind(id, input.platform, input.niche, input.objective, input.language, generated.title, generated.hook, generated.script, JSON.stringify(generated.scenes), generated.caption, JSON.stringify(generated.hashtags), generated.cta, generated.cover_text, now, now).run();
+        return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
+      }
+      const socialAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(approve|reject)$/i);
+      if (request.method === "POST" && socialAction) {
+        const [, id, action] = socialAction;
+        const nextStatus = action === "approve" ? "approved" : "draft";
+        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
+          .bind(nextStatus, new Date().toISOString(), id).run();
+        if (!result.meta?.changes) return json({ error: "Entwurf nicht gefunden oder Status nicht änderbar." }, 404);
+        return json({ id, status: nextStatus, message: action === "approve" ? "Inhalt freigegeben. Noch nicht veröffentlicht." : "Entwurf zurück in die Bearbeitung gesetzt." });
+      }
 
       if (request.method === "GET" && url.pathname === "/api/memory") {
         const result = await env.DB.prepare("SELECT id, fact, category, created_at FROM memory_facts ORDER BY updated_at DESC LIMIT 100").all();
