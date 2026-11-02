@@ -15,6 +15,24 @@ NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers 
 - **MCP server:** bearer-authenticated MCP endpoint with memory, skills, schedules, run history, agent execution, planning, and durable workflow start tools.
 - **Control workspace:** responsive UI for overview, chat, agent team, automations, memory, and execution history.
 
+## Social Autopilot (v1 foundation)
+
+- Generate platform-specific TikTok, Instagram Reels, and YouTube Shorts content packages (hook, script, scene plan, caption, hashtags, CTA, cover text).
+- Save drafts in D1 and approve/reject them through authenticated API endpoints.
+- Publishing is deliberately gated: no account credentials are stored in D1 and no post is claimed as published. Official platform OAuth, app review, media hosting/rendering, and publishing permissions must be configured before direct publishing is enabled.
+
+Authenticated endpoints:
+- GET /api/social/status
+- GET /api/social/posts
+- POST /api/social/generate
+- POST /api/social/posts/:id/approve
+- POST /api/social/posts/:id/reject
+
+Example generation request:
+```json
+{ "platform": "tiktok", "niche": "aesthetic travel destinations", "objective": "growth", "language": "de", "audience": "travel-curious 18-34", "tone": "cinematic, surprising", "duration_seconds": 25 }
+```
+
 ## Stack
 
 - Cloudflare Workers
