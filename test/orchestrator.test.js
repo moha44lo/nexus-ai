@@ -34,3 +34,21 @@ test("continues with available agents if one specialist fails", async () => {
   assert.equal(result.agents.filter(agent => agent.status === "completed").length, 2);
   assert.equal(result.verification.passed, true);
 });
+
+
+test("treats empty model output as a failed specialist instead of a successful report", async () => {
+  const env = { AI: { run: async (_model, input) => {
+    const system = input.messages[0].content;
+    if (system.includes("leitende Orchestrator")) return { response: "Synthetische Antwort." };
+    if (system.includes("Strategist")) return { response: "   " };
+    return { response: "Nutzbarer Bericht." };
+  } } };
+  const result = await runCrew(env, "Test");
+  assert.equal(result.agents.find(agent => agent.agent === "strategist").status, "failed");
+  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 2);
+});
+
+test("fails clearly when every specialist returns empty output", async () => {
+  const env = { AI: { run: async () => ({ response: "" }) } };
+  await assert.rejects(() => runCrew(env, "Test"), /Keiner der NEXUS-Spezialagenten/);
+});
