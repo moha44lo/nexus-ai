@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 test("embedded NEXUS browser script parses", () => {
   const source = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  const match = source.match(/<script>([\\s\\S]*?)<\\/script>/);
+  const match = source.match(/<script>([\s\S]*?)<\/script>/);
   assert.ok(match, "inline application script must exist");
   assert.doesNotThrow(() => new Function(match[1]));
 });
