@@ -53,3 +53,28 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_updated ON login_attempts(updated_at);
+
+-- Social autopilot: AI-generated content packages and a human-reviewed publishing queue.
+CREATE TABLE IF NOT EXISTS social_posts (
+  id TEXT PRIMARY KEY,
+  platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
+  niche TEXT NOT NULL,
+  objective TEXT NOT NULL DEFAULT 'growth',
+  language TEXT NOT NULL DEFAULT 'de',
+  title TEXT NOT NULL,
+  hook TEXT NOT NULL,
+  script TEXT NOT NULL,
+  scenes_json TEXT NOT NULL DEFAULT '[]',
+  caption TEXT NOT NULL,
+  hashtags_json TEXT NOT NULL DEFAULT '[]',
+  cta TEXT NOT NULL DEFAULT '',
+  cover_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'queued', 'published', 'failed')),
+  scheduled_for TEXT,
+  published_at TEXT,
+  provider_post_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC);
