@@ -655,15 +655,19 @@ export default {
         const providerUrl = output?.result?.video || output?.video || output?.result?.url;
         if (!providerUrl || !/^https:\/\//i.test(providerUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
         const remote = await fetch(providerUrl);
-        if (!remote.ok) return json({ error: "Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ")." }, 502);
-        const bytes = await remote.arrayBuffer();
-        if (!bytes.byteLength || bytes.byteLength > 512 * 1024 * 1024) return json({ error: "Videodatei ist leer oder größer als 512 MB." }, 413);
+        if (!remote.ok || !remote.body) return json({ error: "Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ")." }, 502);
+        const declaredSize = Number(remote.headers.get("Content-Length") || 0);
+        if (declaredSize > 64 * 1024 * 1024) return json({ error: "Der Clip ist größer als das derzeit unterstützte 64-MB-Limit." }, 413);
         const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
-        await env.SOCIAL_MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+        const stored = await env.SOCIAL_MEDIA.put(key, remote.body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+        if (!stored || !stored.size || stored.size > 64 * 1024 * 1024) {
+          await env.SOCIAL_MEDIA.delete(key);
+          return json({ error: "Videodatei ist leer oder größer als das 64-MB-Limit." }, 413);
+        }
         const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
         await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
-          .bind(mediaUrl, key, bytes.byteLength, duration, prompt, now, id).run();
-        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: bytes.byteLength, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
+          .bind(mediaUrl, key, stored.size, duration, prompt, now, id).run();
+        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: stored.size, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
       }
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
@@ -678,7 +682,7 @@ export default {
         return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
       }
       const publishAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(publish|schedule|publish-status)$/i);
-      if (publishAction) {
+      if (publishAction && (request.method === "POST" || (request.method === "GET" && publishAction[2] === "publish-status"))) {
         const [, id, action] = publishAction;
         const post = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
         if (!post) return json({ error: "Content-Entwurf nicht gefunden." }, 404);
