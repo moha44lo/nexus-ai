@@ -650,6 +650,9 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
         const input = normalizeSocialInput(body);
+        const insights = await env.DB.prepare("SELECT title, views, likes, comments, shares FROM social_analytics ORDER BY views DESC LIMIT 5").all();
+        const performanceContext = (insights.results || []).map(item => "Video: " + item.title + " | Views " + item.views + " | Likes " + item.likes + " | Kommentare " + item.comments + " | Shares " + item.shares).join("\\n");
+        if (performanceContext) input.account_context = (input.account_context + "\\nGemessene Performance-Signale zur kreativen Optimierung (keine Erfolgsgarantie):\\n" + performanceContext).slice(0, 1200);
         const generated = await generateSocialPackage(env, input);
         const id = crypto.randomUUID(), now = new Date().toISOString();
         await env.DB.prepare("INSERT INTO social_posts (id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")
@@ -673,7 +676,10 @@ export default {
         const privacy = String(body.privacy_level || "SELF_ONLY");
         if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
         if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
+        if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
         if (action === "schedule") {
+          const creator = await getTikTokCreatorInfo(env);
+          if (!(creator.privacy_level_options || []).includes(privacy)) return json({ error: "Diese Privatsphäre ist für das verbundene TikTok-Konto nicht verfügbar." }, 400);
           const time = Date.parse(body.scheduled_for || "");
           if (!Number.isFinite(time) || time < Date.now() + 120000 || time > Date.now() + 90 * 86400000) return json({ error: "Bitte eine Veröffentlichungszeit zwischen 2 Minuten und 90 Tagen in der Zukunft wählen." }, 400);
           const result = await env.DB.prepare("UPDATE social_posts SET status = 'queued', privacy_level = ?, scheduled_for = ?, approved_at = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status IN ('draft','approved','queued')")
@@ -681,6 +687,7 @@ export default {
           if (!result.meta?.changes) return json({ error: "Beitrag kann nicht eingeplant werden." }, 409);
           return json({ id, status: "queued", scheduled_for: new Date(time).toISOString(), privacy_level: privacy });
         }
+        if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
         if (post.status !== "approved") return json({ error: "Bitte den Beitrag zuerst redaktionell freigeben." }, 409);
         const claim = await env.DB.prepare("UPDATE social_posts SET status = 'queued', publish_status = 'STARTING', privacy_level = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
           .bind(privacy, new Date().toISOString(), id).run();
