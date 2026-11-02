@@ -743,6 +743,11 @@ export default {
         }
         if (action === "retry") {
           if (post.status !== "failed") return json({ error: "Nur fehlgeschlagene Veröffentlichungen können zurückgesetzt werden." }, 409);
+          if (post.provider_post_id) {
+            const remoteStatus = await fetchTikTokPublishStatus(env, post.provider_post_id);
+            const remoteState = remoteStatus.status || "PROCESSING_UPLOAD";
+            if (remoteState !== "FAILED") return json({ error: "TikTok verarbeitet diesen Beitrag noch oder hat ihn bereits veröffentlicht (" + remoteState + "). NEXUS setzt ihn nicht zurück, um Doppelposts zu vermeiden." }, 409);
+          }
           await env.DB.prepare("UPDATE social_posts SET status = 'approved', provider_post_id = NULL, provider_video_id = NULL, publish_status = NULL, publish_error = NULL, published_at = NULL, published_url = NULL, scheduled_for = NULL, approved_at = ?, updated_at = ? WHERE id = ? AND status = 'failed'")
             .bind(new Date().toISOString(), new Date().toISOString(), id).run();
           return json({ id, status: "approved", message: "Beitrag zurück auf Freigabe gesetzt. Du kannst erneut posten oder planen." });
