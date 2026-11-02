@@ -48,6 +48,8 @@ const PAGE = String.raw`<!doctype html>
 @media(max-width:900px){.social-layout{grid-template-columns:1fr}.social-hero{grid-template-columns:1fr}.social-live{justify-self:start}}
 @media(max-width:520px){.social-two{grid-template-columns:1fr}.social-hero{padding:19px}.social-list-item{grid-template-columns:1fr}.social-actions button{flex:1}}
 
+
+.social-video-panel{display:grid;gap:10px;margin-top:14px;padding:14px;border:1px solid #2a4054;background:#0b121c;border-radius:14px}.social-video-panel video{width:100%;max-height:620px;aspect-ratio:9/16;object-fit:contain;background:#05080d;border-radius:12px}.social-video-panel .video-note{font-size:11px;color:var(--muted)}.social-video-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.social-video-actions select{background:#101a26;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}
 </style></head>
 <body>
 <div id="loginView" class="login-wrap">
@@ -119,7 +121,7 @@ const PAGE = String.raw`<!doctype html>
      <div class="social-field"><label for="socialTone">STIL / BRAND VOICE</label><input id="socialTone" value="cinematic, premium, überraschend, emotional" maxlength="180"></div>
      <div class="social-field"><label for="socialContext">ZUSÄTZLICHER KONTEXT (OPTIONAL)</label><textarea id="socialContext" rows="2" maxlength="500" placeholder="Bevorzugte Bildsprache, Accountname, No-Gos ..."></textarea></div>
      <button id="socialGenerate" class="primary social-submit" type="submit">✳ CONTENT-PAKET GENERIEREN ↗</button>
-     <p class="muted small">Erstellt zunächst ein vollständiges Produktionsbriefing. Ein fertiges MP4 und automatisches Posting sind noch nicht Teil dieser Testversion.</p>
+     <p class="muted small">NEXUS erstellt zuerst das Briefing und kann danach einen vertikalen KI-Videoclip mit synchronisiertem Ton erzeugen. Automatisches Posting folgt nach der offiziellen Plattformfreigabe.</p>
     </form>
    </section>
    <section class="card wide-card social-output"><div class="card-head"><h2>Creative Output</h2><button id="socialRefresh" class="secondary" type="button">Entwürfe ↻</button></div><div id="socialResult" class="social-empty"><div><strong>Deine nächste Content-Idee beginnt hier.</strong>Gib NEXUS eine Nische und starte die erste Mission.</div></div></section>
@@ -205,6 +207,10 @@ function renderSocialResult(post){
  host.append(safeText("h3","CAPTION"));host.append(safeText("div",post.caption,"social-caption"));
  host.append(safeText("div","HASHTAGS: "+(post.hashtags||[]).map(x=>"#"+x).join(" "),"social-caption"));
  host.append(safeText("div","COVER: "+(post.cover_text||"")+" · CTA: "+(post.cta||""),"social-caption"));
+ const videoPanel=document.createElement("section");videoPanel.className="social-video-panel";
+ if(post.video_url){const video=document.createElement("video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=post.video_url;videoPanel.append(video);videoPanel.append(safeText("div","KI-Clip · "+(post.video_duration||5)+" Sekunden · 9:16 · 720p · Anbieter-Vorschau-Link","video-note"));const openVideo=document.createElement("a");openVideo.href=post.video_url;openVideo.target="_blank";openVideo.rel="noopener";openVideo.textContent="Video separat öffnen ↗";openVideo.className="secondary";videoPanel.append(openVideo);}
+ else {const controls=document.createElement("div");controls.className="social-video-actions";const duration=document.createElement("select");duration.id="socialVideoDuration";[5,10,15].forEach(seconds=>{const option=document.createElement("option");option.value=String(seconds);option.textContent=seconds+" Sekunden · ca. $"+(seconds*.07).toFixed(2);duration.append(option);});controls.append(duration);const makeVideo=document.createElement("button");makeVideo.className="primary";makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";makeVideo.onclick=async()=>{if(!post.id)return;makeVideo.disabled=true;makeVideo.textContent="VIDEO ENGINE LÄUFT …";try{const d=await api("/api/social/posts/"+encodeURIComponent(post.id)+"/video",{method:"POST",body:JSON.stringify({duration_seconds:Number(duration.value)})});Object.assign(post,d.post);renderSocialResult(post);await loadSocialPosts();toast("KI-Video wurde erstellt.");}catch(err){toast("Video: "+err.message);makeVideo.disabled=false;makeVideo.textContent="▶ KI-VIDEO ERSTELLEN";}};controls.append(makeVideo);videoPanel.append(controls);videoPanel.append(safeText("div","Geschätzte Modellkosten bei 720p: $0.07 pro Sekunde. Generierung startet erst nach deinem Klick. Noch kein automatisches Posting.","video-note"));}
+ host.append(videoPanel);
  const actions=document.createElement("div");actions.className="social-actions";
  const copy=document.createElement("button");copy.className="secondary";copy.textContent="Caption kopieren";copy.onclick=async()=>{try{await navigator.clipboard.writeText(post.caption+"\n\n"+(post.hashtags||[]).map(x=>"#"+x).join(" "));toast("Caption kopiert.");}catch{toast("Kopieren nicht möglich – bitte Text markieren.");}};actions.append(copy);
  const approve=document.createElement("button");approve.className="primary";approve.textContent="Entwurf freigeben";approve.onclick=async()=>{if(!post.id)return;approve.disabled=true;try{await api("/api/social/posts/"+encodeURIComponent(post.id)+"/approve",{method:"POST",body:"{}"});post.status="approved";toast("Redaktionell freigegeben – noch nicht veröffentlicht.");await loadSocialPosts();}catch(e){toast(e.message);approve.disabled=false;}};actions.append(approve);
@@ -232,26 +238,19 @@ restoreSession();
 
 async function ensureSocialSchema(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_posts (
-    id TEXT PRIMARY KEY,
-    platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
-    niche TEXT NOT NULL,
-    objective TEXT NOT NULL DEFAULT 'growth',
-    language TEXT NOT NULL DEFAULT 'de',
-    title TEXT NOT NULL,
-    hook TEXT NOT NULL,
-    script TEXT NOT NULL,
-    scenes_json TEXT NOT NULL DEFAULT '[]',
-    caption TEXT NOT NULL,
-    hashtags_json TEXT NOT NULL DEFAULT '[]',
-    cta TEXT NOT NULL DEFAULT '',
-    cover_text TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'queued', 'published', 'failed')),
-    scheduled_for TEXT,
-    published_at TEXT,
-    provider_post_id TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    id TEXT PRIMARY KEY, platform TEXT NOT NULL CHECK (platform IN ('tiktok', 'instagram', 'youtube')),
+    niche TEXT NOT NULL, objective TEXT NOT NULL DEFAULT 'growth', language TEXT NOT NULL DEFAULT 'de',
+    title TEXT NOT NULL, hook TEXT NOT NULL, script TEXT NOT NULL, scenes_json TEXT NOT NULL DEFAULT '[]',
+    caption TEXT NOT NULL, hashtags_json TEXT NOT NULL DEFAULT '[]', cta TEXT NOT NULL DEFAULT '',
+    cover_text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
+    scheduled_for TEXT, published_at TEXT, provider_post_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    video_url TEXT, video_status TEXT, video_duration INTEGER, video_prompt TEXT
   )`).run();
+  const columns = await env.DB.prepare("PRAGMA table_info(social_posts)").all();
+  const existing = new Set((columns.results || []).map(column => column.name));
+  for (const [name, type] of [["video_url","TEXT"],["video_status","TEXT"],["video_duration","INTEGER"],["video_prompt","TEXT"]]) {
+    if (!existing.has(name)) await env.DB.prepare("ALTER TABLE social_posts ADD COLUMN " + name + " " + type).run();
+  }
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_status_created ON social_posts(status, created_at DESC)").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_social_posts_platform ON social_posts(platform, created_at DESC)").run();
 }
@@ -463,8 +462,33 @@ export default {
         return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
       }
       if (request.method === "GET" && url.pathname === "/api/social/posts") {
-        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
+        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
         return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
+      }
+      const videoAction = url.pathname.match(/^\\/api\\/social\\/posts\\/([a-f0-9-]+)\\/video$/i);
+      if (request.method === "POST" && videoAction) {
+        const [, id] = videoAction;
+        const row = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
+        if (!row) return json({ error: "Content-Entwurf nicht gefunden." }, 404);
+        const body = await request.json().catch(() => ({}));
+        const duration = Math.max(5, Math.min(15, Math.round(Number(body.duration_seconds) || 5)));
+        const scenes = JSON.parse(row.scenes_json || "[]");
+        const prompt = String(body.prompt || [
+          "Create a premium vertical short-form social video, cinematic realism, 9:16 composition.",
+          "Niche: " + row.niche, "Title: " + row.title, "Opening hook: " + row.hook,
+          "Visual direction: " + scenes.map(scene => scene.visual).join("; "),
+          "Narrative context: " + row.script,
+          "Style: polished creator-grade cinematography, visually striking opening frame, coherent motion, natural lighting, no subtitles, no logos, no watermarks.",
+          "Audio: synchronized natural ambient sound and tasteful cinematic sound design. No copyrighted songs."
+        ].join("\\n")).trim().slice(0, 3000);
+        if (!env.AI?.run) return json({ error: "Cloudflare AI binding ist nicht verfügbar." }, 503);
+        const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
+        const videoUrl = output?.result?.video || output?.video || output?.result?.url;
+        if (!videoUrl || !/^https:\\/\\//i.test(videoUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
+        const now = new Date().toISOString();
+        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
+          .bind(videoUrl, duration, prompt, now, id).run();
+        return json({ post: { id, video_url: videoUrl, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
       }
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
