@@ -332,8 +332,8 @@ export default {
           .bind(runId, task, task.slice(0, 300), JSON.stringify({ type: "durable_workflow" }), "Hintergrund-Workflow eingereiht.", now, now).run();
         try {
           const instance = await env.NEXUS_CORE.create({ params: { task, context: combinedContext, runId } });
-          await env.DB.prepare("UPDATE agent_runs SET plan_json = ?, summary = ?, updated_at = ? WHERE id = ?")
-            .bind(JSON.stringify({ type: "durable_workflow", workflowId: instance.id }), "Hintergrund-Workflow eingereiht · " + instance.id, new Date().toISOString(), runId).run();
+          await env.DB.prepare("UPDATE agent_runs SET plan_json = ?, updated_at = ? WHERE id = ?")
+            .bind(JSON.stringify({ type: "durable_workflow", workflowId: instance.id }), new Date().toISOString(), runId).run();
           return json({ workflowId: instance.id, runId, status: "queued" }, 202);
         } catch (error) {
           await env.DB.prepare("UPDATE agent_runs SET status = 'failed', summary = ?, error = ?, updated_at = ? WHERE id = ?")
