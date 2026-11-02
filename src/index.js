@@ -323,7 +323,7 @@ async function processSocialQueue(env) {
       const state = status.status || "PROCESSING_UPLOAD";
       const complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
       await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, publish_error = ?, published_url = COALESCE(?, published_url), updated_at = ? WHERE id = ?")
-        .bind(state, complete ? "published" : failed ? "failed" : "publishing", complete ? 1 : 0, new Date().toISOString(),
+        .bind(state, complete ? "published" : failed ? "failed" : "queued", complete ? 1 : 0, new Date().toISOString(),
           failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen").slice(0, 1000) : null,
           status.share_url || null, new Date().toISOString(), post.id).run();
     } catch (error) {
@@ -665,8 +665,8 @@ export default {
           const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
           const state = status.status || "PROCESSING_UPLOAD", complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
           await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, published_url = COALESCE(?, published_url), publish_error = ?, updated_at = ? WHERE id = ?")
-            .bind(state, complete ? "published" : failed ? "failed" : "publishing", complete ? 1 : 0, new Date().toISOString(), status.share_url || null, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
-          return json({ id, status: complete ? "published" : failed ? "failed" : "publishing", publish_status: state, published_url: status.share_url || null });
+            .bind(state, complete ? "published" : failed ? "failed" : "queued", complete ? 1 : 0, new Date().toISOString(), status.share_url || null, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : failed ? "failed" : "queued", publish_status: state, published_url: status.share_url || null });
         }
         const body = await request.json().catch(() => ({}));
         const privacy = String(body.privacy_level || "SELF_ONLY");
@@ -688,8 +688,8 @@ export default {
           const result = await publishTikTokVideo(env, { ...post, privacy_level: privacy });
           const complete = result.status === "PUBLISH_COMPLETE";
           await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, publish_error = NULL, updated_at = ? WHERE id = ?")
-            .bind(complete ? "published" : "publishing", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), id).run();
-          return json({ id, status: complete ? "published" : "publishing", publish_status: result.status, published_url: result.share_url || null }, 202);
+            .bind(complete ? "published" : "queued", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : "queued", publish_status: result.status, published_url: result.share_url || null }, 202);
         } catch (error) {
           await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
             .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), id).run();
