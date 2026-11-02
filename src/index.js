@@ -409,7 +409,9 @@ export default {
           return json({ mode: "agent", runId, plan: plan.summary, answer, verification: status === "completed" ? "Browser-Schritte abgeschlossen; Ergebnisse bitte prüfen." : "Ausführung fehlgeschlagen.", result });
         }
 
-        const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT }, ...context], 1800);
+        const memoryResult = await env.DB.prepare("SELECT fact FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
+        const memoryPrompt = (memoryResult.results || []).map(row => "- " + row.fact).join("\\n");
+        const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT + (memoryPrompt ? "\\n\\nVom Nutzer ausdrücklich gespeicherte Fakten:\\n" + memoryPrompt : "") }, ...context], 1800);
         await saveMessage(env, conversationId, "assistant", answer);
         await env.DB.prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title = ?")
           .bind(message.slice(0, 54), new Date().toISOString(), conversationId, "Neuer Chat").run();
