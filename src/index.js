@@ -3,6 +3,7 @@ import { createPlan, needsApproval, runBrowserPlan, validateBrowserUrl } from ".
 import { compileSkill } from "./skill-engine.js";
 import { handleMcpRequest } from "./mcp-server.js";
 import { extractWorkersAIText } from "./model-output.js";
+import { runCrew } from "./orchestrator.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -437,11 +438,17 @@ export default {
             return json({ mode: "agent", runId, requiresApproval: true, plan: plan.summary + (planText ? "\\n" + planText : ""), answer: "NEXUS wartet auf deine Freigabe. Noch wurde nichts ausgeführt.", verification: "Vor Ausführung angehalten." });
           }
           if (plan.steps.length === 0) {
-            const answer = await askAI(env, [{ role: "system", content: SYSTEM_PROMPT + "\\nBeantworte die Aufgabe direkt. Du hast keine Browser-Tools ausgeführt." }, ...context], 1800);
+            const memoryText = (memoryResult.results || []).map(row => "- " + row.fact).join("\\n");
+            const historyText = context.map(item => item.role + ": " + item.content).join("\\n").slice(-7000);
+            const crew = await runCrew(env, message, [historyText, memoryText].filter(Boolean).join("\\n\\n"), async event => {
+              await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                .bind(crypto.randomUUID(), runId, event.agent, "agent:" + event.agent, event.status, JSON.stringify(event), new Date().toISOString()).run();
+            });
+            const answer = crew.answer;
             await env.DB.prepare("UPDATE agent_runs SET status = 'completed', result_json = ?, summary = ?, updated_at = ? WHERE id = ?")
-              .bind(JSON.stringify({ answer }), "Textantwort; keine Browser-Aktion erforderlich.", new Date().toISOString(), runId).run();
+              .bind(JSON.stringify(crew), "NEXUS Multi-Agent-Team: " + crew.agents.filter(agent => agent.status === "completed").length + "/3 Agenten abgeschlossen.", new Date().toISOString(), runId).run();
             await saveMessage(env, conversationId, "assistant", answer);
-            return json({ mode: "agent", runId, plan: plan.summary || "Keine Browser-Schritte erforderlich.", answer, verification: "Keine externen Aktionen ausgeführt." });
+            return json({ mode: "agent", runId, plan: plan.summary || "Aufgabe an das NEXUS-Agententeam delegiert.", answer, verification: crew.verification.note, agents: crew.agents });
           }
           const result = await runBrowserPlan(env, plan, async event => {
             await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
