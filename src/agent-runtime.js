@@ -177,7 +177,7 @@ async function gotoWithRetry(page, url) {
   throw lastError || new Error("Navigation fehlgeschlagen.");
 }
 
-async function searchWithFallback(page, query) {
+export async function searchWithFallback(page, query) {
   const providers = [
     { id: "duckduckgo", url: "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query) },
     { id: "bing", url: "https://www.bing.com/search?q=" + encodeURIComponent(query) },
