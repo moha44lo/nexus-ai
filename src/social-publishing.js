@@ -60,7 +60,7 @@ async function refreshAccount(env, row) {
   const access = await encryptTikTokToken(result.access_token, env.NEXUS_SESSION_SECRET);
   const refresh = await encryptTikTokToken(result.refresh_token || refreshToken, env.NEXUS_SESSION_SECRET);
   await env.DB.prepare("UPDATE social_accounts SET access_token_encrypted = ?, refresh_token_encrypted = ?, access_expires_at = ?, refresh_expires_at = ?, scope = ?, updated_at = ? WHERE platform = 'tiktok'")
-    .bind(access, new Date(now + Number(result.expires_in || 86400) * 1000).toISOString(),
+    .bind(access, refresh, new Date(now + Number(result.expires_in || 86400) * 1000).toISOString(),
       new Date(now + Number(result.refresh_expires_in || 31536000) * 1000).toISOString(),
       result.scope || row.scope || "", new Date().toISOString()).run();
   return { ...row, access_token_encrypted: access, refresh_token_encrypted: refresh,
