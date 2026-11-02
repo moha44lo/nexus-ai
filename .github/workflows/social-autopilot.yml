@@ -31,3 +31,5 @@ jobs:
         run: npm run check
       - name: Unit tests
         run: npm test
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler deploy --dry-run
