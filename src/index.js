@@ -299,7 +299,11 @@ async function ensureSocialSchema(env) {
   const accountColumns = await env.DB.prepare("PRAGMA table_info(social_accounts)").all();
   const accountExisting = new Set((accountColumns.results || []).map(column => column.name));
   if (!accountExisting.has("analytics_synced_at")) await env.DB.prepare("ALTER TABLE social_accounts ADD COLUMN analytics_synced_at TEXT").run();
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, session_hash TEXT NOT NULL DEFAULT '')").run();
+  const oauthColumns = await env.DB.prepare("PRAGMA table_info(social_oauth_states)").all();
+  if (!(oauthColumns.results || []).some(column => column.name === "session_hash")) {
+    await env.DB.prepare("ALTER TABLE social_oauth_states ADD COLUMN session_hash TEXT NOT NULL DEFAULT ''").run();
+  }
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS social_analytics (
     video_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', views INTEGER NOT NULL DEFAULT 0,
     likes INTEGER NOT NULL DEFAULT 0, comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
@@ -503,11 +507,14 @@ export default {
       try {
         requireDatabase(env);
         await ensureSocialSchema(env);
+        if (!(await validSession(request, env))) return new Response("Bitte zuerst bei NEXUS anmelden und TikTok erneut verbinden.", { status: 401 });
+        const sessionToken = cookieValue(request, "nexus_session") || "";
+        const sessionHash = await hmac(env.NEXUS_SESSION_SECRET, "tiktok-oauth:" + sessionToken);
         const state = url.searchParams.get("state") || "";
         const code = url.searchParams.get("code") || "";
-        const saved = await env.DB.prepare("SELECT state, expires_at FROM social_oauth_states WHERE state = ?").bind(state).first();
+        const saved = await env.DB.prepare("SELECT state, expires_at, session_hash FROM social_oauth_states WHERE state = ?").bind(state).first();
         await env.DB.prepare("DELETE FROM social_oauth_states WHERE state = ?").bind(state).run();
-        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code) return new Response("TikTok OAuth state ungültig oder abgelaufen.", { status: 400 });
+        if (!saved || Date.parse(saved.expires_at) < Date.now() || !code || !saved.session_hash || saved.session_hash !== sessionHash) return new Response("TikTok OAuth state ungültig, abgelaufen oder gehört zu einer anderen NEXUS-Sitzung.", { status: 400 });
         if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return new Response("TikTok-App-Schlüssel fehlen.", { status: 503 });
         const form = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, client_secret: env.TIKTOK_CLIENT_SECRET, code, grant_type: "authorization_code", redirect_uri: await tiktokRedirectUri(request, env) });
         const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
@@ -593,10 +600,12 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/api/social/tiktok/connect") {
         if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET) return json({ error: "TIKTOK_CLIENT_KEY und TIKTOK_CLIENT_SECRET fehlen in Cloudflare Secrets." }, 503);
+        const sessionToken = cookieValue(request, "nexus_session") || "";
+        const sessionHash = await hmac(env.NEXUS_SESSION_SECRET, "tiktok-oauth:" + sessionToken);
         const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
         const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await env.DB.prepare("DELETE FROM social_oauth_states WHERE expires_at <= ?").bind(new Date().toISOString()).run();
-        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at) VALUES (?, ?, ?)").bind(state, expires, new Date().toISOString()).run();
+        await env.DB.prepare("INSERT INTO social_oauth_states (state, expires_at, created_at, session_hash) VALUES (?, ?, ?, ?)").bind(state, expires, new Date().toISOString(), sessionHash).run();
         const authorize = new URL("https://www.tiktok.com/v2/auth/authorize/");
         authorize.search = new URLSearchParams({ client_key: env.TIKTOK_CLIENT_KEY, response_type: "code", scope: "user.info.basic,video.publish,video.list", redirect_uri: await tiktokRedirectUri(request, env), state }).toString();
         return Response.redirect(authorize.toString(), 302);
