@@ -11,7 +11,7 @@ test("embedded NEXUS browser script parses", () => {
 
 test("Social Autopilot workspace exposes content and video controls", () => {
   const source = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  for (const marker of ['id="socialView"', 'id="socialForm"', 'id="socialGenerate"', 'id="socialPosts"', 'data-view="social"', 'xai/grok-imagine-video', 'KI-VIDEO ERSTELLEN', 'video_url', 'socialTikTokConnect', 'socialAnalyticsRefresh', 'socialPrivacy_', 'FREIGEBEN & PLANEN', '/api/social/tiktok/callback', '/api/social/analytics/refresh', 'SOCIAL_MEDIA', '/retry', '/unschedule', 'FEHLER ZURÜCKSETZEN', 'ZEITPLAN ABBRECHEN', 'Kommentare erlauben', 'Duet erlauben', 'Stitch erlauben', 'session_hash', 'tiktok-oauth:', 'Andere NEXUS-Sitzung', "video_status = 'failed'", '15 * 60 * 1000', 'sicher in NEXUS gespeichert', 'staleGeneration', 'session_hash', 'disable_comment', 'disable_duet', 'disable_stitch']) {
+  for (const marker of ['id="socialView"', 'id="socialForm"', 'id="socialGenerate"', 'id="socialPosts"', 'data-view="social"', 'xai/grok-imagine-video', 'KI-VIDEO ERSTELLEN', 'video_url', 'socialTikTokConnect', 'socialAnalyticsRefresh', 'socialPrivacy_', 'FREIGEBEN & PLANEN', '/api/social/tiktok/callback', '/api/social/analytics/refresh', 'SOCIAL_MEDIA', '/retry', '/unschedule', 'FEHLER ZURÜCKSETZEN', 'ZEITPLAN ABBRECHEN', 'Kommentare erlauben', 'Duet erlauben', 'Stitch erlauben', 'session_hash', 'tiktok-oauth:', 'anderen NEXUS-Sitzung', "video_status = 'failed'", '15 * 60 * 1000', 'sicher in NEXUS gespeichert', 'staleGeneration', 'session_hash', 'disable_comment', 'disable_duet', 'disable_stitch']) {
     assert.ok(source.includes(marker), "missing UI marker: " + marker);
   }
 });
