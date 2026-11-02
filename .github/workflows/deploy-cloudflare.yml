@@ -98,15 +98,23 @@ jobs:
           test -n "$conversation_id"
           reply_file="$(mktemp)"
           reply_status="$(curl --max-time 90 -sS -o "$reply_file" -w '%{http_code}' -b "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg id "$conversation_id" '{message:"Antworte exakt mit NEXUS_OK",conversationId:$id}')" "$WORKER_URL/api/chat")"
+          ai_quota_exhausted=false
           if [[ "$reply_status" != "200" ]]; then
-            echo "Direct chat failed with HTTP $reply_status:"
+            echo "Direct chat returned HTTP $reply_status:"
             cat "$reply_file"
-            exit 1
+            if jq -e '.error | tostring | test("4006|Tageskontingent aufgebraucht|daily free allocation"; "i")' "$reply_file" >/dev/null; then
+              echo "::warning::Deployment, health, login and database checks passed; Workers AI daily quota is exhausted, so inference tests are skipped."
+              ai_quota_exhausted=true
+            else
+              exit 1
+            fi
+          else
+            reply="$(cat "$reply_file")"
+            printf '%s' "$reply" | jq -e '.answer | type == "string" and length > 0'
           fi
-          reply="$(cat "$reply_file")"
           rm -f "$reply_file"
-          printf '%s' "$reply" | jq -e '.answer | type == "string" and length > 0'
-          workflow="$(curl -fsS -b "$cookies" -H 'Content-Type: application/json' -d '{"task":"Erkläre in einem Satz, warum 2 plus 2 gleich 4 ist."}' "$WORKER_URL/api/workflows")"
+          if [[ "$ai_quota_exhausted" != "true" ]]; then
+            workflow="$(curl -fsS -b "$cookies" -H 'Content-Type: application/json' -d '{"task":"Erkläre in einem Satz, warum 2 plus 2 gleich 4 ist."}' "$WORKER_URL/api/workflows")"
           workflow_id="$(printf '%s' "$workflow" | jq -r '.workflowId')"
           run_id="$(printf '%s' "$workflow" | jq -r '.runId')"
           test -n "$workflow_id"
@@ -133,5 +141,8 @@ jobs:
             printf '%s' "$last_state" | jq .
             exit 1
           fi
-          history="$(curl -fsS -b "$cookies" "$WORKER_URL/api/agent/runs/$run_id")"
-          printf '%s' "$history" | jq -e '(.run.status == "completed" or .run.status == "needs_review") and (.steps | length >= 3) and (.run.result | type == "object")'
+            history="$(curl -fsS -b "$cookies" "$WORKER_URL/api/agent/runs/$run_id")"
+            printf '%s' "$history" | jq -e '(.run.status == "completed" or .run.status == "needs_review") and (.steps | length >= 3) and (.run.result | type == "object")'
+          else
+            echo "Skipping multi-agent workflow inference because the daily Workers AI quota is exhausted."
+          fi
