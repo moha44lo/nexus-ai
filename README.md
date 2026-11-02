@@ -75,7 +75,7 @@ Required GitHub Actions secrets:
 - NEXUS_SESSION_SECRET (32+ characters)
 - NEXUS_MCP_TOKEN (32+ characters)
 
-The Cloudflare account must have Browser Run enabled and the deployment token needs Workers, D1, and R2 permissions. The deployment workflow provisions the `nexus-social-media` R2 bucket. In TikTok Developer Portal, register the callback URL `https://nexus-ai.moha-safdari6.workers.dev/api/social/tiktok/callback`, enable Login Kit, Content Posting API, and Display API, request `user.info.basic`, `video.publish`, and `video.list`, and submit the app for audit before public posting. Review docs/BROWSER_AGENT_SETUP.md.
+The Cloudflare account must have Browser Run enabled and the deployment token needs Workers, D1, and R2 permissions. The deployment workflow provisions the `nexus-social-media` R2 bucket. In TikTok Developer Portal, register the callback URL `https://nexus-ai.moha-safdari6.workers.dev/api/social/tiktok/callback`, enable Login Kit, Content Posting API with Direct Post configured, and Display API, request `user.info.basic`, `video.publish`, and `video.list`, and submit the app for audit before public posting. Review docs/BROWSER_AGENT_SETUP.md.
 
 ## Authenticated API
 
