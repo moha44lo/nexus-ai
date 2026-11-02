@@ -8,8 +8,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "nexus-memory",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_name": "nexus",
+      "database_id": "8c725381-e48d-414e-acd8-df5b3f82d5b5"
     }
   ],
   "workflows": [
