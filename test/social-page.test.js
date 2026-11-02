@@ -9,9 +9,9 @@ test("embedded NEXUS browser script parses", () => {
   assert.doesNotThrow(() => new Function(match[1]));
 });
 
-test("Social Autopilot workspace exposes its primary controls", () => {
+test("Social Autopilot workspace exposes content and video controls", () => {
   const source = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  for (const marker of ['id="socialView"', 'id="socialForm"', 'id="socialGenerate"', 'id="socialPosts"', 'data-view="social"']) {
+  for (const marker of ['id="socialView"', 'id="socialForm"', 'id="socialGenerate"', 'id="socialPosts"', 'data-view="social"', 'xai/grok-imagine-video', 'KI-VIDEO ERSTELLEN', 'video_url']) {
     assert.ok(source.includes(marker), "missing UI marker: " + marker);
   }
 });
