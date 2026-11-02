@@ -4,9 +4,11 @@ import { runCrew } from "../src/orchestrator.js";
 
 function mockAI({ failRole = null, score = 96, issues = [] } = {}) {
   const calls = [];
+  const modelCalls = [];
   return {
     calls,
-    env: { AI: { run: async (_model, input) => {
+    env: { AI: { run: async (model, input) => {
+      modelCalls.push(model);
       const system = input.messages[0].content;
       calls.push(system);
       if (system.includes("leitende Meta-Orchestrator")) return { response: "Entwurf mit Fakten, Annahmen und offenen Punkten." };
@@ -27,6 +29,8 @@ test("runs eight specialist agents, an improvement loop and final quality gate",
   const result = await runCrew(mock.env, "Erstelle einen Plan", "Kontext", event => events.push(event));
   assert.equal(result.answer, "Geprüfte finale Antwort mit konkreten Schritten.");
   assert.equal(result.evolution.agentsConfigured, 8);
+  assert.equal(new Set(result.evolution.models.map(item => item.model)).size, 8, "each specialist must use a distinct model");
+  assert.equal(new Set(mock.modelCalls.slice(0, 8)).size, 8, "the eight parallel agent calls must target eight different models");
   assert.equal(result.evolution.agentsCompleted, 8);
   assert.equal(result.evolution.rounds.length, 1);
   assert.equal(result.verification.passed, true);
