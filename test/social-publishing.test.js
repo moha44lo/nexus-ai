@@ -18,5 +18,5 @@ test("encrypted TikTok tokens cannot be decrypted with a different secret", asyn
 });
 
 test("TikTok token encryption rejects weak application secrets", async () => {
-  await assert.rejects(() => encryptTikTokToken("token", "short"), /mindestens 32 Zeichen/);
+  await assert.rejects(() => encryptTikTokToken("token", "short"), /zu kurz/);
 });
