@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "db:init:local": "wrangler d1 execute nexus-memory --local --file=./schema.sql",
     "db:init:remote": "wrangler d1 execute nexus-memory --remote --file=./schema.sql",
-    "check": "node --check src/index.js && node --check src/nexus-workflow.js"
+    "check": "node --check src/index.js && node --check src/nexus-workflow.js && node --check src/skill-engine.js",
+    "test": "node --test"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
