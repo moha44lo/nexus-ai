@@ -81,3 +81,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Smoke test live chat
+        shell: bash
+        env:
+          WORKER_URL: https://nexus-ai.moha-safdari6.workers.dev
+          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
+        run: |
+          set -euo pipefail
+          curl -fsS "$WORKER_URL/health" | jq -e '.ok == true and .bindings.ai == true'
+          cookies="$(mktemp)"
+          trap 'rm -f "$cookies"' EXIT
+          curl -fsS -c "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg pin "$NEXUS_PIN" '{pin:$pin}')" "$WORKER_URL/api/login" | jq -e '.ok == true'
+          conversation="$(curl -fsS -b "$cookies" -H 'Content-Type: application/json' -d '{}' "$WORKER_URL/api/conversations")"
+          conversation_id="$(printf '%s' "$conversation" | jq -r '.conversation.id')"
+          test -n "$conversation_id"
+          reply="$(curl --max-time 90 -fsS -b "$cookies" -H 'Content-Type: application/json' -d "$(jq -n --arg id "$conversation_id" '{message:"Antworte exakt mit NEXUS_OK",conversationId:$id}')" "$WORKER_URL/api/chat")"
+          printf '%s' "$reply" | jq -e '.answer | type == "string" and length > 0'
