@@ -216,6 +216,9 @@ function safeError(error) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") {
+      return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE) } });
+    }
     if (request.method === "GET" && url.pathname === "/") {
       return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     }
