@@ -47,6 +47,9 @@ body{background:#050811;letter-spacing:.01em}body:before{content:"";position:fix
 .login-wrap{background:radial-gradient(ellipse at 50% 30%,#12384855,transparent 45%),#050811}.login-card{background:linear-gradient(150deg,#122238,#0b1423);border-color:#31546a;box-shadow:0 30px 100px #0007,0 0 70px #73e7d50c}.login-card .brand-mark{box-shadow:0 0 0 9px #77f3e20b,0 0 50px #77f3e255}.field{background:#07111e;border-color:#304b67}.toast{box-shadow:0 12px 35px #0006;border-color:#4a8279}
 .command-launch{border:1px solid #34516b;background:#101d2d;color:#b8cbe0;border-radius:10px;padding:7px 11px;font-size:11px}.command-launch kbd{color:#7feadd;border:1px solid #36596a;border-radius:5px;padding:2px 5px;margin-left:6px;font-size:9px}.command-overlay{position:fixed;inset:0;z-index:20;background:#020711c9;backdrop-filter:blur(12px);display:grid;place-items:start center;padding:15vh 18px 20px}.command-box{width:min(620px,100%);border:1px solid #3a6178;border-radius:18px;background:#0d1929;box-shadow:0 35px 100px #000a;overflow:hidden}.command-search{width:100%;border:0;border-bottom:1px solid #29435d;background:#0a1422;color:#eff7ff;padding:19px 20px;font-size:16px;outline:none}.command-results{padding:9px;display:grid;gap:5px;max-height:50vh;overflow:auto}.command-item{display:flex;justify-content:space-between;align-items:center;text-align:left;border:1px solid transparent;background:transparent;color:#dbe9f8;border-radius:10px;padding:12px}.command-item:hover{background:#172c40;border-color:#365a70}.command-item small{color:#8299b4}.command-hint{padding:10px 16px;border-top:1px solid #233a53;color:#8299b4;font-size:10px}
 @media(max-width:680px){.content{padding-top:18px}.hero{padding:22px 18px;border-radius:17px}.hero:after{right:-10%;font-size:180px}.hero h1{font-size:32px}.command-launch{padding:6px 8px}.topbar{gap:6px}}
+
+/* NEXUS 5.3 — truthful system state, execution details and accessibility */
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.agent-state{font-weight:800}.run-details{margin:0 0 12px;padding:14px;border:1px solid #31516b;border-radius:12px;background:#081321}.run-details pre{margin:10px 0 0;max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#b9cbe0;font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.status-completed{color:var(--green);border-color:#326b5b}.status-partial,.status-needs_review,.status-awaiting_approval,.status-queued{color:var(--amber);border-color:#6d5937}.status-failed,.status-rejected{color:var(--red);border-color:#6b3b4a}.status-running{color:var(--cyan);border-color:#326b72}@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 </style></head>
 <body>
 <div id="loginView" class="login-wrap"><div class="login-card"><div class="brand-mark">✳</div><h1>NEXUS</h1><p>Autonomous Intelligence Workspace<br>Private access · Secure session</p><form id="loginForm"><input id="pin" class="field" type="password" autocomplete="current-password" placeholder="Private access PIN" required><button class="primary" style="width:100%;margin-top:8px" type="submit">Workspace öffnen →</button></form><div id="loginError" class="error"></div></div></div>
@@ -62,7 +65,7 @@ body{background:#050811;letter-spacing:.01em}body:before{content:"";position:fix
   <button data-view="memory"><span class="nav-icon">◈</span>Gedächtnis</button>
   <button data-view="activity"><span class="nav-icon">▤</span>Aktivität</button>
  </nav>
- <div class="side-bottom"><div class="system-card"><strong><span class="pulse"></span>System online</strong><small>Orchestrator · Browser · D1 Memory</small></div><button id="logout" class="secondary">Abmelden</button></div>
+ <div class="side-bottom"><div class="system-card"><strong><span id="systemPulse" class="pulse"></span><span id="systemLabel">System wird geprüft …</span></strong><small id="systemDetails">Orchestrator · Browser · D1 Memory</small></div><button id="logout" class="secondary">Abmelden</button></div>
 </aside>
 <main class="main">
  <header class="topbar"><div class="crumb">NEXUS / <strong id="crumb">Übersicht</strong></div><div class="top-actions"><button id="commandOpen" class="command-launch">⌘ Suche <kbd>Ctrl K</kbd></button><button id="newChatTop" class="secondary">＋ Neu</button><span class="top-pill">● &nbsp;Private environment</span><div class="avatar">N</div></div></header>
@@ -126,7 +129,7 @@ document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLower
 
 async function createConversation(){const d=await api("/api/conversations",{method:"POST",body:"{}"});conversationId=d.conversation.id;chat.innerHTML="";bubble("Neue Aufgabe gestartet. NEXUS ist bereit.","system");}
 async function openConversation(id){conversationId=id;chat.innerHTML="";const d=await api("/api/history?conversationId="+encodeURIComponent(id));for(const m of d.messages||[])bubble(m.content,m.role==="user"?"user":"");}
-async function enter(){ $("loginView").classList.add("hidden");$("app").classList.remove("hidden");const d=await api("/api/conversations");if(d.conversations?.length)await openConversation(d.conversations[0].id);else await createConversation();await refreshOverview();}
+async function enter(){ $("loginView").classList.add("hidden");$("app").classList.remove("hidden");const d=await api("/api/conversations");if(d.conversations?.length)await openConversation(d.conversations[0].id);else await createConversation();await Promise.all([refreshOverview(),refreshHealth()]);}
 $("loginForm").onsubmit=async e=>{e.preventDefault();$("loginError").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({pin:$("pin").value})});$("pin").value="";await enter();}catch(err){$("loginError").textContent=err.message;}};
 $("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{}"});}finally{location.reload();}};
 $("newChat").onclick=()=>createConversation().catch(e=>toast(e.message));$("newChatTop").onclick=()=>createConversation().catch(e=>toast(e.message));
@@ -136,8 +139,9 @@ async function sendMessage(value){if(busy||!value.trim())return;if(!conversation
 $("composer").onsubmit=e=>{e.preventDefault();const value=$("question").value.trim();if(!value)return;$("question").value="";sendMessage(value);};
 $("backgroundRun").onclick=async()=>{const task=$("question").value.trim();if(!task)return toast("Beschreibe zuerst eine Aufgabe.");$("question").value="";bubble(task,"user");const statusBubble=bubble("NEXUS Durable Workflow wird gestartet …","system");$("backgroundRun").disabled=true;try{const started=await api("/api/workflows",{method:"POST",body:JSON.stringify({task})});statusBubble.textContent="Workflow gestartet · "+started.workflowId+"\nNEXUS arbeitet im Hintergrund.";let finished=false;for(let i=0;i<90;i++){await new Promise(resolve=>setTimeout(resolve,3000));const state=await api("/api/workflows/"+encodeURIComponent(started.workflowId));if(state.status==="complete"){statusBubble.className="bubble";statusBubble.textContent=state.output?.answer||"Workflow abgeschlossen.";if(state.output?.agents){const log=document.createElement("div");log.className="bubble system";log.textContent="AGENTEN-PROTOKOLL\n"+state.output.agents.map(a=>a.name+" · "+a.status.toUpperCase()).join("\n")+"\n\n"+(state.output.verification?.note||"");chat.appendChild(log);}finished=true;break;}if(state.status==="errored"||state.status==="terminated"){statusBubble.textContent="Workflow "+state.status+": "+(state.error?.message||"Keine Details verfügbar.");finished=true;break;}statusBubble.textContent="Workflow "+state.status+" · NEXUS arbeitet im Hintergrund …";}if(!finished)statusBubble.textContent+="\nDer Workflow läuft weiter. Du kannst später im Aktivitätsbereich nachsehen.";}catch(err){statusBubble.textContent="Fehler: "+err.message;}finally{$("backgroundRun").disabled=false;}};
 $("question").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("composer").requestSubmit();}};
+async function refreshHealth(){try{const data=await api("/health");const bindings=data.bindings||{};const active=Object.entries(bindings).filter(([,value])=>value).map(([key])=>key.toUpperCase());const missing=Object.entries(bindings).filter(([,value])=>!value).map(([key])=>key.toUpperCase());$("systemLabel").textContent=missing.length?"System eingeschränkt":"System online";$("systemDetails").textContent="Aktiv: "+(active.join(" · ")||"keine")+(missing.length?" · Fehlt: "+missing.join(", "):"");$("systemPulse").style.background=missing.length?"#ffd28a":"var(--green)";}catch(error){$("systemLabel").textContent="Status nicht verfügbar";$("systemDetails").textContent=error.message;$("systemPulse").style.background="var(--red)";}}
 async function refreshOverview(){try{const [runs,schedules,memory]=await Promise.all([api("/api/agent/runs"),api("/api/schedules"),api("/api/memory")]);$("statRuns").textContent=(runs.runs||[]).length;$("statSchedules").textContent=(schedules.schedules||[]).length;$("statMemory").textContent=(memory.facts||[]).length;renderRuns($("recentRuns"),(runs.runs||[]).slice(0,4));renderSchedules($("recentSchedules"),(schedules.schedules||[]).slice(0,4));}catch(e){toast(e.message);}}
-function renderRuns(host,items){host.innerHTML="";if(!items.length){host.innerHTML='<div class="empty">Noch keine Aufgabenläufe.</div>';return;}for(const x of items){const row=document.createElement("div");row.className="list-row";const a=document.createElement("div"),b=document.createElement("strong"),c=document.createElement("small");b.textContent=x.task||x.goal||"Agentenlauf";c.textContent=new Date(x.created_at).toLocaleString("de-CH")+" · "+(x.summary||"");a.append(b,c);const actions=document.createElement("div");actions.style.display="flex";actions.style.gap="6px";const tag=document.createElement("span");tag.className="tag";tag.textContent=x.status;actions.append(tag);if(x.status==="awaiting_approval"){const approve=document.createElement("button");approve.className="secondary";approve.textContent="Freigeben";approve.onclick=async()=>{approve.disabled=true;try{await api("/api/agent/approve",{method:"POST",body:JSON.stringify({runId:x.id,approved:true})});toast("Agentenlauf freigegeben.");loadRuns();}catch(e){toast(e.message);}};actions.append(approve);}row.append(a,actions);host.appendChild(row);}}
+function renderRuns(host,items){host.innerHTML="";if(!items.length){host.innerHTML='<div class="empty">Noch keine Aufgabenläufe.</div>';return;}for(const x of items){const row=document.createElement("div");row.className="list-row";const a=document.createElement("div"),b=document.createElement("strong"),c=document.createElement("small");b.textContent=x.task||x.goal||"Agentenlauf";c.textContent=new Date(x.created_at).toLocaleString("de-CH")+" · "+(x.summary||"");a.append(b,c);const actions=document.createElement("div");actions.style.display="flex";actions.style.gap="6px";const tag=document.createElement("span");tag.className="tag status-"+String(x.status||"unknown").replace(/[^a-z_-]/gi,"");tag.textContent=x.status;actions.append(tag);const details=document.createElement("button");details.className="secondary";details.textContent="Details";details.onclick=async()=>{const next=row.nextElementSibling;if(next?.classList.contains("run-details")){next.remove();return;}details.disabled=true;try{const data=await api("/api/agent/runs/"+encodeURIComponent(x.id));const panel=document.createElement("div");panel.className="run-details";const heading=document.createElement("strong");heading.textContent="Ausführungsprotokoll";const pre=document.createElement("pre");pre.textContent=JSON.stringify({plan:data.run?.plan,steps:data.steps,result:data.run?.result,error:data.run?.error},null,2).slice(0,14000);panel.append(heading,pre);row.after(panel);}catch(e){toast(e.message);}finally{details.disabled=false;}};actions.append(details);if(x.status==="awaiting_approval"){const approve=document.createElement("button");approve.className="secondary";approve.textContent="Freigeben";approve.onclick=async()=>{approve.disabled=true;try{await api("/api/agent/approve",{method:"POST",body:JSON.stringify({runId:x.id,approved:true})});toast("Agentenlauf freigegeben.");loadRuns();}catch(e){toast(e.message);}};actions.append(approve);}row.append(a,actions);host.appendChild(row);}}
 function renderSchedules(host,items){host.innerHTML="";if(!items.length){host.innerHTML='<div class="empty">Noch keine Automationen angelegt.</div>';return;}for(const x of items){const row=document.createElement("div");row.className="list-row";const a=document.createElement("div"),b=document.createElement("strong"),c=document.createElement("small");b.textContent=x.name;c.textContent=x.task+" · alle "+x.interval_minutes+" Min.";a.append(b,c);const tag=document.createElement("span");tag.className="tag";tag.textContent=x.enabled?"AKTIV":"PAUSIERT";row.append(a,tag);host.appendChild(row);}}
 async function loadRuns(){try{const d=await api("/api/agent/runs");renderRuns($("runList"),d.runs||[]);}catch(e){$("runList").textContent=e.message;}}
 async function loadSchedules(){try{const d=await api("/api/schedules");renderSchedules($("scheduleList"),d.schedules||[]);}catch(e){$("scheduleList").textContent=e.message;}}
@@ -259,9 +263,9 @@ async function processDueSchedules(env) {
         await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
           .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
       });
-      const status = result.status === "completed" ? "completed" : "failed";
+      const status = result.status === "completed" ? "completed" : result.status === "partial" ? "partial" : "failed";
       await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
-        .bind(status, JSON.stringify(result), status === "completed" ? "Zeitplan-Aufgabe abgeschlossen." : "Zeitplan-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+        .bind(status, JSON.stringify(result), status === "completed" ? "Zeitplan-Aufgabe abgeschlossen." : status === "partial" ? "Zeitplan-Aufgabe teilweise abgeschlossen." : "Zeitplan-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
     } catch (error) {
       await env.DB.prepare("UPDATE agent_runs SET status = 'failed', summary = ?, error = ?, updated_at = ? WHERE id = ?")
         .bind("Zeitplan-Ausführung fehlgeschlagen.", safeError(error), new Date().toISOString(), runId).run();
@@ -323,8 +327,19 @@ export default {
         const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
         const memoryContext = (memory.results || []).map(item => "- " + item.fact).join("\\n");
         const combinedContext = [context, memoryContext ? "Vom Nutzer gespeicherte Fakten:\\n" + memoryContext : ""].filter(Boolean).join("\\n\\n").slice(0, 12000);
-        const instance = await env.NEXUS_CORE.create({ params: { task, context: combinedContext } });
-        return json({ workflowId: instance.id, status: "queued" }, 202);
+        const runId = crypto.randomUUID(), now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'queued', ?, ?, ?)")
+          .bind(runId, task, task.slice(0, 300), JSON.stringify({ type: "durable_workflow" }), "Hintergrund-Workflow eingereiht.", now, now).run();
+        try {
+          const instance = await env.NEXUS_CORE.create({ params: { task, context: combinedContext, runId } });
+          await env.DB.prepare("UPDATE agent_runs SET plan_json = ?, summary = ?, updated_at = ? WHERE id = ?")
+            .bind(JSON.stringify({ type: "durable_workflow", workflowId: instance.id }), "Hintergrund-Workflow eingereiht · " + instance.id, new Date().toISOString(), runId).run();
+          return json({ workflowId: instance.id, runId, status: "queued" }, 202);
+        } catch (error) {
+          await env.DB.prepare("UPDATE agent_runs SET status = 'failed', summary = ?, error = ?, updated_at = ? WHERE id = ?")
+            .bind("Workflow konnte nicht gestartet werden.", safeError(error), new Date().toISOString(), runId).run();
+          throw error;
+        }
       }
       if (request.method === "GET" && url.pathname.startsWith("/api/workflows/")) {
         if (!env.NEXUS_CORE) return json({ error: "NEXUS Workflow-Binding fehlt." }, 503);
@@ -387,9 +402,9 @@ export default {
           await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
         });
-        const status = result.status === "completed" ? "completed" : "failed";
+        const status = result.status === "completed" ? "completed" : result.status === "partial" ? "partial" : "failed";
         await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
-          .bind(status, JSON.stringify(result), status === "completed" ? "Skill ausgeführt." : "Skill fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+          .bind(status, JSON.stringify(result), status === "completed" ? "Skill ausgeführt." : status === "partial" ? "Skill teilweise ausgeführt." : "Skill fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
         return json({ status, runId, result });
       }
 
@@ -448,10 +463,10 @@ export default {
           await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
         });
-        const status = result.status === "completed" ? "completed" : "failed";
+        const status = result.status === "completed" ? "completed" : result.status === "partial" ? "partial" : "failed";
         await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
-          .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
-        const answer = status === "completed" ? "Browser-Aufgabe abgeschlossen. Ergebnis:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
+          .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : status === "partial" ? "Browser-Aufgabe teilweise abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+        const answer = status === "completed" ? "Browser-Aufgabe abgeschlossen. Ergebnis:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : status === "partial" ? "Browser-Aufgabe teilweise abgeschlossen. Nicht alle Schritte waren erfolgreich:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
         if (run.conversation_id) await saveMessage(env, run.conversation_id, "assistant", answer);
         return json({ status, answer, result });
       }
@@ -529,12 +544,12 @@ export default {
             await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
               .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
           });
-          const status = result.status === "completed" ? "completed" : "failed";
+          const status = result.status === "completed" ? "completed" : result.status === "partial" ? "partial" : "failed";
           await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
-            .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
-          const answer = status === "completed" ? JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
+            .bind(status, JSON.stringify(result), status === "completed" ? "Browser-Aufgabe abgeschlossen." : status === "partial" ? "Browser-Aufgabe teilweise abgeschlossen." : "Browser-Aufgabe fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+          const answer = status === "completed" ? JSON.stringify(result, null, 2).slice(0, 9000) : status === "partial" ? "Teilweise abgeschlossen:\\n" + JSON.stringify(result, null, 2).slice(0, 9000) : "Browser-Aufgabe fehlgeschlagen: " + (result.error || "Unbekannter Fehler");
           await saveMessage(env, conversationId, "assistant", answer);
-          return json({ mode: "agent", runId, plan: plan.summary, answer, verification: status === "completed" ? "Browser-Schritte abgeschlossen; Ergebnisse bitte prüfen." : "Ausführung fehlgeschlagen.", result });
+          return json({ mode: "agent", runId, plan: plan.summary, answer, verification: status === "completed" ? "Browser-Schritte abgeschlossen; Ergebnisse bitte prüfen." : status === "partial" ? "Ein Teil der Browser-Schritte ist fehlgeschlagen; erfolgreiche Ergebnisse bleiben erhalten." : "Ausführung fehlgeschlagen.", result });
         }
 
         const memoryResult = await env.DB.prepare("SELECT fact FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
