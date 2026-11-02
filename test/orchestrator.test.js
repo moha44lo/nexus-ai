@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCrew } from "../src/orchestrator.js";
 
-function mockAI({ failRole = null, score = 96, issues = [] } = {}) {
+function mockAI({ failRole = null, transientRole = null, score = 96, issues = [] } = {}) {
   const calls = [];
   const modelCalls = [];
+  const roleAttempts = new Map();
   return {
     calls,
     modelCalls,
@@ -18,7 +19,12 @@ function mockAI({ failRole = null, score = 96, issues = [] } = {}) {
       if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score, issues: [], answer: "Geprüfte finale Antwort mit konkreten Schritten." }) };
       const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red Team","System-Architekt","Performance-Optimierer"].find(name => system.includes(name));
       if (failRole && role === failRole) throw new Error("offline");
-      if (role) return { response: role + " Bericht." };
+      if (role) {
+        const attempts = (roleAttempts.get(role) || 0) + 1;
+        roleAttempts.set(role, attempts);
+        if (transientRole === role && attempts === 1) throw new Error("503 temporarily unavailable");
+        return { response: role + " Bericht." };
+      }
       throw new Error("Unexpected role: " + system.slice(0, 100));
     } } }
   };
@@ -58,4 +64,12 @@ test("continues with available agents but requires six successful specialists", 
 test("fails clearly when fewer than three agents can produce a report", async () => {
   const env = { AI: { run: async () => ({ response: "" }) } };
   await assert.rejects(() => runCrew(env, "Test"), /Zu wenige Agenten/);
+});
+
+test("retries a transient Workers AI 503 once and continues the swarm", async () => {
+  const mock = mockAI({ transientRole: "Recherche-Spezialist" });
+  const result = await runCrew(mock.env, "Erstelle einen Plan");
+  assert.equal(result.evolution.agentsCompleted, 8);
+  assert.equal(result.verification.passed, true);
+  assert.equal(mock.modelCalls.filter(model => model === "@cf/meta/llama-4-scout-17b-16e-instruct").length, 2);
 });
