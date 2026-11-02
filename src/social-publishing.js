@@ -118,6 +118,8 @@ export async function publishTikTokVideo(env, post) {
     }
   });
   if (!init.upload_url || !init.publish_id) throw new Error("TikTok hat keine Upload-ID zurückgegeben.");
+  await env.DB.prepare("UPDATE social_posts SET provider_post_id = ?, publish_status = 'PROCESSING_UPLOAD', updated_at = ? WHERE id = ?")
+    .bind(init.publish_id, new Date().toISOString(), post.id).run();
   for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
     const chunk = bytes.slice(offset, Math.min(offset + chunkSize, bytes.byteLength));
     const end = offset + chunk.byteLength - 1;
