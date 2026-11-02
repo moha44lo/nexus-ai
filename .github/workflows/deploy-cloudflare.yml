@@ -39,7 +39,8 @@ jobs:
             fi
           done
           for name in NEXUS_SESSION_SECRET NEXUS_MCP_TOKEN; do
-            if [[ ${#name} -gt 0 && ${#${!name}} -lt 32 ]]; then
+            value="${!name}"
+            if [[ ${#value} -lt 32 ]]; then
               echo "::error::$name must contain at least 32 characters"
               exit 1
             fi
