@@ -2,6 +2,7 @@ import { NEXUSWorkflow } from "./nexus-workflow.js";
 import { createPlan, needsApproval, runBrowserPlan, validateBrowserUrl } from "./agent-runtime.js";
 import { compileSkill } from "./skill-engine.js";
 import { handleMcpRequest } from "./mcp-server.js";
+import { extractWorkersAIText } from "./model-output.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -199,10 +200,8 @@ async function getContext(env, conversationId) {
   return (result.results || []).reverse().map(row => ({ role: row.role, content: row.content }));
 }
 async function askAI(env, messages, maxTokens = 1600) {
-  const result = await env.AI.run(MODEL, { messages, max_tokens: maxTokens });
-  const answer = result?.response;
-  if (typeof answer !== "string" || !answer.trim()) throw new Error("Das KI-Modell hat keine Antwort geliefert.");
-  return answer.trim();
+  const result = await env.AI.run(MODEL, { messages, max_tokens: maxTokens, chat_template_kwargs: { enable_thinking: false } });
+  return extractWorkersAIText(result);
 }
 async function processDueSchedules(env) {
   requireDatabase(env);
