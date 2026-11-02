@@ -19,6 +19,7 @@ NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers 
 
 - Generate platform-specific TikTok, Instagram Reels, and YouTube Shorts content packages (hook, script, scene plan, caption, hashtags, CTA, cover text).
 - Includes a dedicated Social Autopilot dashboard, generation form, scene-by-scene preview, copyable caption, and saved content library.
+- Generates vertical 9:16 AI video clips with synchronized audio through Cloudflare AI's `xai/grok-imagine-video` model. Users choose 5, 10, or 15 seconds at 720p; estimated generation cost is shown before starting.
 - Social D1 tables and indexes are initialized automatically on the first authenticated Social API request.
 - Save drafts in D1 and approve/reject them through authenticated API endpoints.
 - Publishing is deliberately gated: no account credentials are stored in D1 and no post is claimed as published. Official platform OAuth, app review, media hosting/rendering, and publishing permissions must be configured before direct publishing is enabled.
