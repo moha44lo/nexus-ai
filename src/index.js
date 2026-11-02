@@ -150,6 +150,31 @@ function cookieHeader(value, secure = true) {
 function clearCookie() {
   return "nexus_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
 }
+async function loginIpHash(request) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+async function loginRateState(env, ipHash) {
+  const row = await env.DB.prepare("SELECT attempts, window_started_at, blocked_until FROM login_attempts WHERE ip_hash = ?").bind(ipHash).first();
+  if (!row?.blocked_until) return { blocked: false };
+  const remaining = Math.ceil((Date.parse(row.blocked_until) - Date.now()) / 1000);
+  return remaining > 0 ? { blocked: true, retryAfter: remaining } : { blocked: false };
+}
+async function recordLoginFailure(env, ipHash) {
+  const now = new Date();
+  const iso = now.toISOString();
+  const cutoff = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+  const lockUntil = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  await env.DB.prepare(`INSERT INTO login_attempts (ip_hash, attempts, window_started_at, blocked_until, updated_at)
+    VALUES (?, 1, ?, NULL, ?)
+    ON CONFLICT(ip_hash) DO UPDATE SET
+      attempts = CASE WHEN login_attempts.window_started_at <= ? THEN 1 ELSE login_attempts.attempts + 1 END,
+      window_started_at = CASE WHEN login_attempts.window_started_at <= ? THEN excluded.window_started_at ELSE login_attempts.window_started_at END,
+      blocked_until = CASE WHEN login_attempts.window_started_at <= ? THEN NULL WHEN login_attempts.attempts + 1 >= 5 THEN ? ELSE login_attempts.blocked_until END,
+      updated_at = excluded.updated_at`)
+    .bind(ipHash, iso, iso, cutoff, cutoff, cutoff, lockUntil).run();
+}
 function requireDatabase(env) {
   if (!env.DB) throw new Error("D1-Datenbank fehlt. Richte die DB-Bindung wie in README.md beschrieben ein.");
 }
@@ -225,11 +250,20 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/login") {
       try {
+        if (!env.DB) return json({ error: "Login-Schutz ist nicht verfügbar. Datenbankbindung prüfen." }, 503);
+        const ipHash = await loginIpHash(request);
+        const rate = await loginRateState(env, ipHash);
+        if (rate.blocked) return json({ error: "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen." }, 429, { "Retry-After": String(rate.retryAfter) });
         const body = await request.json();
-        if (!env.NEXUS_LOGIN_PIN || String(body.pin || "") !== env.NEXUS_LOGIN_PIN) return json({ error: "PIN falsch." }, 401);
+        if (!env.NEXUS_LOGIN_PIN || String(body.pin || "") !== env.NEXUS_LOGIN_PIN) {
+          await recordLoginFailure(env, ipHash);
+          const after = await loginRateState(env, ipHash);
+          return json({ error: after.blocked ? "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen." : "PIN falsch." }, after.blocked ? 429 : 401, after.blocked ? { "Retry-After": String(after.retryAfter) } : {});
+        }
         if (!env.NEXUS_SESSION_SECRET || env.NEXUS_SESSION_SECRET.length < 32) {
           return json({ error: "NEXUS_SESSION_SECRET fehlt oder ist zu kurz. Bitte ein Secret mit mindestens 32 Zeichen hinterlegen." }, 503);
         }
+        await env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash = ?").bind(ipHash).run();
         const token = await createSession(env);
         return json({ ok: true }, 200, { "Set-Cookie": cookieHeader(token) });
       } catch (error) { return json({ error: safeError(error) }, 400); }
