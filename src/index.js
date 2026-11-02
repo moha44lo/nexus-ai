@@ -465,7 +465,7 @@ export default {
         const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
         return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
       }
-      const videoAction = url.pathname.match(/^\\/api\\/social\\/posts\\/([a-f0-9-]+)\\/video$/i);
+      const videoAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/video$/i);
       if (request.method === "POST" && videoAction) {
         const [, id] = videoAction;
         const row = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
@@ -480,11 +480,11 @@ export default {
           "Narrative context: " + row.script,
           "Style: polished creator-grade cinematography, visually striking opening frame, coherent motion, natural lighting, no subtitles, no logos, no watermarks.",
           "Audio: synchronized natural ambient sound and tasteful cinematic sound design. No copyrighted songs."
-        ].join("\\n")).trim().slice(0, 3000);
+        ].join("\n")).trim().slice(0, 3000);
         if (!env.AI?.run) return json({ error: "Cloudflare AI binding ist nicht verfügbar." }, 503);
         const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
         const videoUrl = output?.result?.video || output?.video || output?.result?.url;
-        if (!videoUrl || !/^https:\\/\\//i.test(videoUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
+        if (!videoUrl || !/^https:\/\//i.test(videoUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
         const now = new Date().toISOString();
         await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
           .bind(videoUrl, duration, prompt, now, id).run();
