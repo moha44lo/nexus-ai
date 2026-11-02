@@ -1,5 +1,6 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
 import { createPlan, needsApproval, runBrowserPlan } from "./agent-runtime.js";
+import { compileSkill } from "./skill-engine.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -254,6 +255,39 @@ export default {
         await env.DB.prepare("DELETE FROM memory_facts WHERE id = ?").bind(url.pathname.split("/").pop()).run();
         return json({ ok: true });
       }
+      if (request.method === "GET" && url.pathname === "/api/skills") {
+        const result = await env.DB.prepare("SELECT id, name, description, version, enabled, run_count, created_at, updated_at FROM skills ORDER BY updated_at DESC LIMIT 100").all();
+        return json({ skills: result.results || [] });
+      }
+      if (request.method === "POST" && url.pathname === "/api/skills") {
+        const body = await request.json();
+        const skill = compileSkill(body.definition || body);
+        const now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO skills (id, name, description, version, definition_json, enabled, run_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)")
+          .bind(skill.id, skill.name, skill.description, skill.version, JSON.stringify(skill), now, now).run();
+        return json({ ok: true, skill });
+      }
+      if (request.method === "POST" && url.pathname.startsWith("/api/skills/") && url.pathname.endsWith("/run")) {
+        const skillId = url.pathname.split("/")[3];
+        const row = await env.DB.prepare("SELECT * FROM skills WHERE id = ? AND enabled = 1").bind(skillId).first();
+        if (!row) return json({ error: "Skill nicht gefunden oder deaktiviert." }, 404);
+        const skill = compileSkill(JSON.parse(row.definition_json));
+        const plan = { goal: skill.name, summary: skill.description, steps: skill.steps };
+        const runId = crypto.randomUUID(), now = new Date().toISOString(), approvalRequired = needsApproval(plan);
+        await env.DB.prepare("INSERT INTO agent_runs (id, conversation_id, task, goal, plan_json, status, summary, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(runId, "Skill: " + skill.name, skill.name, JSON.stringify(plan), approvalRequired ? "awaiting_approval" : "running", skill.description, now, now).run();
+        await env.DB.prepare("UPDATE skills SET run_count = run_count + 1, updated_at = ? WHERE id = ?").bind(now, skillId).run();
+        if (approvalRequired) return json({ status: "awaiting_approval", runId, plan });
+        const result = await runBrowserPlan(env, plan, async event => {
+          await env.DB.prepare("INSERT INTO agent_run_steps (id, run_id, step_id, tool, status, detail_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(crypto.randomUUID(), runId, event.stepId || null, event.tool || null, event.status, JSON.stringify(event), new Date().toISOString()).run();
+        });
+        const status = result.status === "completed" ? "completed" : "failed";
+        await env.DB.prepare("UPDATE agent_runs SET status = ?, result_json = ?, summary = ?, error = ?, updated_at = ? WHERE id = ?")
+          .bind(status, JSON.stringify(result), status === "completed" ? "Skill ausgeführt." : "Skill fehlgeschlagen.", result.error || null, new Date().toISOString(), runId).run();
+        return json({ status, runId, result });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/schedules") {
         const result = await env.DB.prepare("SELECT id, name, task, cron, timezone, interval_minutes, enabled, next_run_at, last_run_at FROM schedules ORDER BY created_at DESC LIMIT 100").all();
         return json({ schedules: result.results || [] });
