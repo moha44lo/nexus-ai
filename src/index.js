@@ -5,6 +5,7 @@ import { handleMcpRequest } from "./mcp-server.js";
 import { extractWorkersAIText } from "./model-output.js";
 import { runCrew } from "./orchestrator.js";
 import { formatRuntimeError } from "./runtime-errors.js";
+import { normalizeSocialInput, generateSocialPackage } from "./social-autopilot.js";
 export { NEXUSWorkflow };
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -357,6 +358,33 @@ export default {
       }
 
       requireDatabase(env);
+
+      if (request.method === "GET" && url.pathname === "/api/social/status") {
+        const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
+        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
+      }
+      if (request.method === "GET" && url.pathname === "/api/social/posts") {
+        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
+        return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/social/generate") {
+        const body = await request.json();
+        const input = normalizeSocialInput(body);
+        const generated = await generateSocialPackage(env, input);
+        const id = crypto.randomUUID(), now = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO social_posts (id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")
+          .bind(id, input.platform, input.niche, input.objective, input.language, generated.title, generated.hook, generated.script, JSON.stringify(generated.scenes), generated.caption, JSON.stringify(generated.hashtags), generated.cta, generated.cover_text, now, now).run();
+        return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
+      }
+      const socialAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(approve|reject)$/i);
+      if (request.method === "POST" && socialAction) {
+        const [, id, action] = socialAction;
+        const nextStatus = action === "approve" ? "approved" : "draft";
+        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
+          .bind(nextStatus, new Date().toISOString(), id).run();
+        if (!result.meta?.changes) return json({ error: "Entwurf nicht gefunden oder Status nicht änderbar." }, 404);
+        return json({ id, status: nextStatus, message: action === "approve" ? "Inhalt freigegeben. Noch nicht veröffentlicht." : "Entwurf zurück in die Bearbeitung gesetzt." });
+      }
 
       if (request.method === "GET" && url.pathname === "/api/memory") {
         const result = await env.DB.prepare("SELECT id, fact, category, created_at FROM memory_facts ORDER BY updated_at DESC LIMIT 100").all();
