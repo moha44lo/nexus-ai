@@ -8,7 +8,7 @@ export class NEXUSWorkflow extends WorkflowEntrypoint {
     const runId = String(event.payload?.runId || "");
     if (!task) throw new Error("Kein Auftrag angegeben.");
 
-    const result = await step.do("NEXUS Multi-Agent Orchestrierung", async () => {
+    const result = await step.do("NEXUS Multi-Agent Orchestrierung", { timeout: "15 minutes" }, async () => {
       const now = new Date().toISOString();
       if (this.env.DB && runId) {
         await this.env.DB.prepare("UPDATE agent_runs SET status = 'running', summary = ?, updated_at = ? WHERE id = ?")
