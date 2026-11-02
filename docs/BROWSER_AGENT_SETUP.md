@@ -6,7 +6,7 @@ The browser agent uses Cloudflare Browser Run through the Workers browser bindin
 
 1. Use a Cloudflare account with Browser Run / Browser Rendering enabled for the account.
 2. Create a strong MCP bearer token (at least 32 characters) and set it as the Worker secret `NEXUS_MCP_TOKEN`.
-3. Set the Worker secrets `NEXUS_PIN` and `NEXUS_SESSION_SECRET` (at least 32 characters).
+3. The deployment workflow maps the GitHub Actions secret `NEXUS_PIN` to the Worker secret `NEXUS_LOGIN_PIN`; it also sets `NEXUS_SESSION_SECRET` and `NEXUS_MCP_TOKEN`.
 4. Keep the `browser.binding = "BROWSER"` declaration in `wrangler.jsonc`.
 5. Install dependencies with `npm install`.
 6. Apply the expanded D1 schema to the existing database:
@@ -30,7 +30,7 @@ The browser agent uses Cloudflare Browser Run through the Workers browser bindin
 - Payments, purchases, deletion, publishing, sending messages, and account changes are not exposed as supported browser actions.
 - Browser Run is a cloud headless browser, not the user's logged-in local Chrome. It does not inherit local cookies or sessions. Authenticated workflows and a local Chrome bridge are separate work.
 - A fresh browser session is created per execution. Long-lived sessions, visual live view, and recovery across browser restarts are not implemented yet.
-- Schedules, external MCP transports, chat channels, autonomous skill compilation/evaluation, and multi-agent delegation remain subsequent modules; database foundations exist for memory, run history, skills, and schedules, but those features must not be represented as active until their runtimes are implemented.
+- The specialist-agent crew and durable Cloudflare Workflow execution are implemented. General third-party MCP server aggregation, local desktop control, email/calendar connectors, and unrestricted external actions are not implemented.
 - Cloudflare account quotas and pricing apply. Check the current Browser Run limits before enabling recurring jobs.
 
 ## API additions
