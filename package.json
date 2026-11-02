@@ -1,0 +1,16 @@
+{
+  "name": "nexus-ai",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute nexus-memory --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute nexus-memory --remote --file=./schema.sql",
+    "check": "node --check src/index.js && node --check src/nexus-workflow.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
