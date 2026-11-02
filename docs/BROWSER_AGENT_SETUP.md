@@ -16,7 +16,7 @@ The browser agent uses Cloudflare Browser Run through the Workers browser bindin
 
 ## What the current browser runtime can do
 
-- Navigate to public HTTP(S) pages.
+- Search the public web using DuckDuckGo HTML results, then navigate to public HTTP(S) pages.
 - Inspect page text, links, buttons and form controls.
 - Extract text from a CSS selector.
 - Click a CSS selector or fill a form field after an explicit in-chat approval.
