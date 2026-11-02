@@ -90,7 +90,7 @@ button{cursor:pointer}
     <div class="modes"><button class="mode active" data-mode="chat">Chat</button><button class="mode" data-mode="agent">Agent-Modus</button></div>
   </div>
   <div class="control-actions"><button id="controlToggle">NEXUS Control Center</button></div>
-  <section id="controlPanel" class="control-panel" hidden><div class="control-actions"><button data-panel="runs">Agent-Läufe</button><button data-panel="skills">Skills</button><button data-panel="schedules">Zeitpläne</button><button data-panel="memory">Gedächtnis</button></div><pre id="controlOutput" class="control-output">Wähle einen Bereich.</pre></section>
+  <section id="controlPanel" class="control-panel" hidden><div class="control-actions"><button data-panel="runs">Agent-Läufe</button><button data-panel="skills">Skills</button><button data-panel="schedules">Zeitpläne</button><button data-panel="memory">Gedächtnis</button><button id="saveMemory">Fakt speichern</button><button id="createSchedule">Automation erstellen</button></div><pre id="controlOutput" class="control-output">Wähle einen Bereich.</pre></section>
   <div id="chat"><div class="msg">Hallo! Ich bin NEXUS. Was möchtest du angehen?</div></div>
   <form id="composer" class="composer"><textarea id="question" class="field" rows="1" placeholder="Schreib NEXUS eine Nachricht …"></textarea><button id="send" class="send" type="submit">Senden ↑</button></form>
   <div class="disclaimer">NEXUS kann Fehler machen. Prüfe wichtige Informationen.</div>
@@ -112,6 +112,9 @@ $("logout").onclick=async()=>{try{await api("/api/logout",{method:"POST",body:"{
 $("controlToggle").onclick=()=>{$("controlPanel").hidden=!$("controlPanel").hidden;if(!$("controlPanel").hidden)loadControl("runs");};
 async function loadControl(kind){const routes={runs:"/api/agent/runs",skills:"/api/skills",schedules:"/api/schedules",memory:"/api/memory"};const out=$("controlOutput");out.textContent="Lade …";try{const data=await api(routes[kind]);out.textContent=JSON.stringify(data,null,2);}catch(error){out.textContent=error.message;}}
 document.querySelectorAll("[data-panel]").forEach(button=>button.addEventListener("click",()=>loadControl(button.dataset.panel)));
+$("saveMemory").onclick=async()=>{const fact=prompt("Was soll NEXUS dauerhaft speichern?");if(!fact)return;try{const data=await api("/api/memory",{method:"POST",body:JSON.stringify({fact})});$("controlOutput").textContent=JSON.stringify(data,null,2);}catch(error){$("controlOutput").textContent=error.message;}};
+$("createSchedule").onclick=async()=>{const name=prompt("Name der Automation?");if(!name)return;const task=prompt("Welche Aufgabe soll NEXUS wiederholen?");if(!task)return;const intervalMinutes=Number(prompt("Intervall in Minuten? (mindestens 5)","60"));if(!Number.isInteger(intervalMinutes)||intervalMinutes<5||intervalMinutes>10080){$("controlOutput").textContent="Intervall muss 5 bis 10080 Minuten sein.";return;}try{const data=await api("/api/schedules",{method:"POST",body:JSON.stringify({name,task,intervalMinutes})});$("controlOutput").textContent=JSON.stringify(data,null,2);}catch(error){$("controlOutput").textContent=error.message;}};
+
 
 $("newChat").onclick=()=>createConversation().catch(e=>addMessage(e.message,"system"));
 document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll(".mode").forEach(x=>x.classList.toggle("active",x===b));$("question").placeholder=mode==="agent"?"Beschreibe eine komplexe Aufgabe für NEXUS …":"Schreib NEXUS eine Nachricht …";});
