@@ -79,7 +79,7 @@ async function repairSelector(env, page, step, previousSelector, failure) {
   if (!candidates.length) throw new Error("Keine eindeutigen interaktiven Elemente für die Selbstreparatur gefunden.");
   const response = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
     messages: [
-      { role: "system", content: "Du reparierst einen Browser-Selektor. Wähle ausschließlich einen selector aus der Kandidatenliste. Antworte nur als JSON {\\"selector\\":\\"...\\"}. Erfinde keinen Selektor." },
+      { role: "system", content: 'Du reparierst einen Browser-Selektor. Wähle ausschließlich einen selector aus der Kandidatenliste. Antworte nur als JSON {"selector":"..."}. Erfinde keinen Selektor.' },
       { role: "user", content: JSON.stringify({ intent: step.reason || step.tool, action: step.tool, previousSelector, failure: String(failure).slice(0, 300), candidates }) }
     ],
     max_tokens: 300
