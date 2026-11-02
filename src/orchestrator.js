@@ -1,4 +1,5 @@
 import { extractWorkersAIText } from "./model-output.js";
+import { inspectAnswer } from "./quality-control.js";
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
 const ROLES = [
@@ -62,11 +63,25 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
     if (typeof checked.answer !== "string" || !checked.answer.trim()) throw new Error("Quality Gate lieferte keine finale Antwort.");
     const score = Number(checked.score);
     finalAnswer = checked.answer.trim().slice(0, 14000);
+    const modelIssues = Array.isArray(checked.issues) ? checked.issues.filter(x => typeof x === "string").slice(0, 5).map(x => x.slice(0, 240)) : [];
+    const deterministicIssues = inspectAnswer(finalAnswer, task);
+    if (deterministicIssues.length) {
+      const repaired = await invoke(env, [
+        { role: "system", content: "Du bist ein präziser deutscher Textredakteur. Repariere ausschließlich die genannten Qualitätsfehler. Bewahre Bedeutung, Fakten und Struktur. Entferne fremde Schriftsysteme, falls sie versehentlich in einen lateinischen Text geraten sind. Erfinde nichts. Gib nur die vollständige korrigierte Antwort aus." },
+        { role: "user", content: JSON.stringify({ task: String(task).slice(0, 5000), answer: finalAnswer, issues: deterministicIssues }) }
+      ], 1800);
+      if (typeof repaired === "string" && repaired.trim() && inspectAnswer(repaired, task).length === 0) {
+        finalAnswer = repaired.trim().slice(0, 14000);
+      } else {
+        modelIssues.push(...deterministicIssues);
+      }
+    }
+    const remainingIssues = inspectAnswer(finalAnswer, task);
     quality = {
-      score: Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : null,
-      issues: Array.isArray(checked.issues) ? checked.issues.filter(x => typeof x === "string").slice(0, 5).map(x => x.slice(0, 240)) : [],
-      passed: Number.isFinite(score) && score >= 70,
-      note: Number.isFinite(score) && score >= 70 ? "Antwort wurde in einem separaten Prüfschritt kontrolliert und finalisiert." : "Quality Gate hat Verbesserungsbedarf erkannt; die geprüfte Antwort wird mit Hinweisen ausgegeben."
+      score: Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score - (remainingIssues.length ? 25 : 0)))) : null,
+      issues: [...modelIssues, ...remainingIssues].slice(0, 5),
+      passed: Number.isFinite(score) && score >= 70 && remainingIssues.length === 0,
+      note: Number.isFinite(score) && score >= 70 && remainingIssues.length === 0 ? "Antwort wurde durch KI-Prüfung und zusätzliche technische Qualitätsregeln kontrolliert." : "Quality Gate hat Verbesserungsbedarf erkannt; Hinweise werden ausgegeben."
     };
     await onAgent({ agent: "quality_gate", name: "Quality Gate", title: "Qualitätsprüfung", status: "completed", output: JSON.stringify(quality), createdAt: gateStarted });
   } catch (error) {
