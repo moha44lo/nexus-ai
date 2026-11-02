@@ -11,8 +11,8 @@ test("detects unexpected CJK characters in a Latin-language answer", () => {
 });
 
 test("detects encoding damage and unfinished endings", () => {
-  const issues = inspectAnswer("Das ist ein beschädigter Text mit Ã¤ und endet hier:", "Erkläre ausführlich, wie das funktioniert.");
-  assert.ok(issues.some(issue => /Kodierungsfehler/.test(issue)));
+  const issues = inspectAnswer("Das ist ein beschädigter Text mit \uFFFD und endet hier:", "Erkläre ausführlich, wie das funktioniert.");
+  assert.ok(issues.some(issue => /beschädigte Unicode-Zeichen/.test(issue)));
   assert.ok(issues.some(issue => /mitten in einem Satz/.test(issue)));
 });
 
