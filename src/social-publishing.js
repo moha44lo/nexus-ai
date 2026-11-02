@@ -95,7 +95,7 @@ export async function publishTikTokVideo(env, post) {
   const object = await env.SOCIAL_MEDIA.get(post.video_storage_key);
   if (!object) throw new Error("Gespeicherte Videodatei wurde in R2 nicht gefunden.");
   const bytes = new Uint8Array(await object.arrayBuffer());
-  if (!bytes.byteLength || bytes.byteLength > 512 * 1024 * 1024) throw new Error("Videodatei ist leer oder größer als 512 MB.");
+  if (!bytes.byteLength || bytes.byteLength > 64 * 1024 * 1024) throw new Error("Videodatei ist leer oder größer als 64 MB.");
   const hashtags = JSON.parse(post.hashtags_json || "[]").map(tag => "#" + String(tag).replace(/^#/, "")).join(" ");
   const title = (String(post.caption || "") + (hashtags ? "\n\n" + hashtags : "")).slice(0, 2200);
   const maxChunk = 64 * 1024 * 1024;
