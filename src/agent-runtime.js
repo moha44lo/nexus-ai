@@ -4,7 +4,7 @@ const MAX_STEPS = 12;
 const MAX_TEXT = 12000;
 const BLOCKED_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 
-function safeUrl(value) {
+export function validateBrowserUrl(value) {
   let url;
   try { url = new URL(String(value)); } catch { throw new Error("Ungültige URL."); }
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Nur HTTP- und HTTPS-Seiten sind erlaubt.");
@@ -40,7 +40,7 @@ export async function createPlan(env, task, memory = []) {
     if (!allowed.has(step.tool)) throw new Error("Nicht erlaubtes Tool im Plan: " + String(step.tool));
     if (!step.id) step.id = "s" + (index + 1);
     if (!step.args || typeof step.args !== "object" || Array.isArray(step.args)) step.args = {};
-    if (step.tool === "browser.navigate") step.args.url = safeUrl(step.args.url);
+    if (step.tool === "browser.navigate") step.args.url = validateBrowserUrl(step.args.url);
     if (["browser.click", "browser.fill"].includes(step.tool) && !step.args.selector) throw new Error("CSS-Selektor fehlt.");
     if (step.tool === "browser.fill" && typeof step.args.value !== "string") throw new Error("Eingabewert fehlt.");
   }
@@ -61,7 +61,7 @@ export async function runBrowserPlan(env, plan, onStep = async () => {}) {
     for (const step of plan.steps) {
       let output;
       if (step.tool === "browser.navigate") {
-        await page.goto(safeUrl(step.args.url), { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.goto(validateBrowserUrl(step.args.url), { waitUntil: "domcontentloaded", timeout: 30000 });
         output = { url: page.url(), title: await page.title() };
       } else if (step.tool === "browser.inspect") {
         output = await page.evaluate(() => ({
