@@ -685,7 +685,7 @@ export default {
           .bind(id, input.platform, input.niche, input.objective, input.language, generated.title, generated.hook, generated.script, JSON.stringify(generated.scenes), generated.caption, JSON.stringify(generated.hashtags), generated.cta, generated.cover_text, now, now).run();
         return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
       }
-      const publishAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(publish|schedule|publish-status)$/i);
+      const publishAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(publish|schedule|publish-status|retry|unschedule)$/i);
       if (publishAction && (request.method === "POST" || (request.method === "GET" && publishAction[2] === "publish-status"))) {
         const [, id, action] = publishAction;
         const post = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
@@ -707,6 +707,19 @@ export default {
         if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
         if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
         if (post.platform !== "tiktok") return json({ error: "Direktveröffentlichung ist aktuell nur für TikTok integriert." }, 400);
+        if (action === "schedule" && (post.provider_post_id || post.publish_status)) return json({ error: "Dieser Beitrag wird bereits an TikTok übertragen und kann nicht mehr umgeplant werden." }, 409);
+        if (action === "unschedule") {
+          if (post.status !== "queued" || post.provider_post_id || post.publish_status) return json({ error: "Dieser Zeitplan kann nicht mehr abgebrochen werden." }, 409);
+          await env.DB.prepare("UPDATE social_posts SET status = 'approved', scheduled_for = NULL, updated_at = ? WHERE id = ? AND status = 'queued' AND provider_post_id IS NULL AND publish_status IS NULL")
+            .bind(new Date().toISOString(), id).run();
+          return json({ id, status: "approved", message: "Zeitplan abgebrochen. Entwurf bleibt freigegeben." });
+        }
+        if (action === "retry") {
+          if (post.status !== "failed") return json({ error: "Nur fehlgeschlagene Veröffentlichungen können zurückgesetzt werden." }, 409);
+          await env.DB.prepare("UPDATE social_posts SET status = 'approved', provider_post_id = NULL, provider_video_id = NULL, publish_status = NULL, publish_error = NULL, published_at = NULL, published_url = NULL, scheduled_for = NULL, approved_at = ?, updated_at = ? WHERE id = ? AND status = 'failed'")
+            .bind(new Date().toISOString(), new Date().toISOString(), id).run();
+          return json({ id, status: "approved", message: "Beitrag zurück auf Freigabe gesetzt. Du kannst erneut posten oder planen." });
+        }
         if (action === "schedule") {
           const creator = await getTikTokCreatorInfo(env);
           if (!(creator.privacy_level_options || []).includes(privacy)) return json({ error: "Diese Privatsphäre ist für das verbundene TikTok-Konto nicht verfügbar." }, 400);
