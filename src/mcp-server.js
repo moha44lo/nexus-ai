@@ -1,3 +1,4 @@
+import { createPlan, needsApproval } from "./agent-runtime.js";
 const PROTOCOL_VERSION = "2025-03-26";
 const TOOLS = [
   { name: "nexus.memory.list", description: "List explicitly saved NEXUS memory facts.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -5,6 +6,7 @@ const TOOLS = [
   { name: "nexus.skills.list", description: "List reusable NEXUS browser skills.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "nexus.schedules.list", description: "List recurring NEXUS automations.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "nexus.schedules.create", description: "Create a recurring NEXUS task. Browser clicks and form submissions still pause for approval.", inputSchema: { type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 100 }, task: { type: "string", minLength: 1, maxLength: 12000 }, intervalMinutes: { type: "integer", minimum: 5, maximum: 10080 } }, required: ["name", "task"], additionalProperties: false } },
+  { name: "nexus.agent.plan", description: "Create and independently review a browser automation plan without executing it.", inputSchema: { type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 12000 } }, required: ["task"], additionalProperties: false } },
   { name: "nexus.runs.list", description: "List recent agent execution runs.", inputSchema: { type: "object", properties: {}, additionalProperties: false } }
 ];
 
@@ -70,6 +72,14 @@ export async function handleMcpRequest(request, env) {
         await env.DB.prepare("INSERT INTO schedules (id, name, task, cron, timezone, interval_minutes, enabled, next_run_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'Europe/Zurich', ?, 1, ?, ?, ?)")
           .bind(scheduleId, name, task, "every " + interval + " minutes", interval, next, iso, iso).run();
         data = { id: scheduleId, name, intervalMinutes: interval, nextRunAt: next }; break;
+      }
+      case "nexus.agent.plan": {
+        const task = String(args.task || "").trim().slice(0, 12000);
+        if (!task) return Response.json(error(id, -32602, "task is required"));
+        const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
+        const plan = await createPlan(env, task, memory.results || []);
+        data = { plan, approvalRequired: needsApproval(plan), executed: false };
+        break;
       }
       case "nexus.runs.list": {
         const rows = await env.DB.prepare("SELECT id, task, goal, status, summary, error, created_at, updated_at FROM agent_runs ORDER BY created_at DESC LIMIT 50").all();
