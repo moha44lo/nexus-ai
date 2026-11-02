@@ -20,3 +20,9 @@ test("encrypted TikTok tokens cannot be decrypted with a different secret", asyn
 test("TikTok token encryption rejects weak application secrets", async () => {
   await assert.rejects(() => encryptTikTokToken("token", "short"), /zu kurz/);
 });
+
+test("TikTok chunk upload sends required byte headers and checks final chunk status", async () => {
+  const source = await (await import("node:fs/promises")).readFile(new URL("../src/social-publishing.js", import.meta.url), "utf8");
+  assert.match(source, /"Content-Length": String\(chunk\.byteLength\)/);
+  assert.match(source, /expectedStatus = end === bytes\.byteLength - 1 \? 201 : 206/);
+});

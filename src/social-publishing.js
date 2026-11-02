@@ -127,11 +127,13 @@ export async function publishTikTokVideo(env, post) {
       method: "PUT",
       headers: {
         "Content-Type": "video/mp4",
+        "Content-Length": String(chunk.byteLength),
         "Content-Range": "bytes " + offset + "-" + end + "/" + bytes.byteLength
       },
       body: chunk
     });
-    if (!upload.ok) throw new Error("TikTok-Video-Upload fehlgeschlagen (HTTP " + upload.status + ").");
+    const expectedStatus = end === bytes.byteLength - 1 ? 201 : 206;
+    if (upload.status !== expectedStatus) throw new Error("TikTok-Video-Upload fehlgeschlagen (HTTP " + upload.status + ", erwartet " + expectedStatus + ").");
   }
   const status = await tiktokRequest(API + "/v2/post/publish/status/fetch/", accessToken, { publish_id: init.publish_id });
   const publishStatus = status.status || "PROCESSING_UPLOAD";
