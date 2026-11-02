@@ -13,7 +13,7 @@ function mockAI({ failRole = null, score = 96, issues = [] } = {}) {
       if (system.includes("unabhängiger Qualitätsrichter")) return { response: JSON.stringify({ score, must_fix: issues, keep: [], verdict: issues.length ? "improve" : "ready" }) };
       if (system.includes("Evolution-Refiner")) return { response: "Verbesserter Entwurf mit klaren Belegen und Grenzen." };
       if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score, issues: [], answer: "Geprüfte finale Antwort mit konkreten Schritten." }) };
-      const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red-Team","System-Architekt","Performance-Optimierer"].find(name => system.includes(name));
+      const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red Team","System-Architekt","Performance-Optimierer"].find(name => system.includes(name));
       if (failRole && role === failRole) throw new Error("offline");
       if (role) return { response: role + " Bericht." };
       throw new Error("Unexpected role: " + system.slice(0, 100));
