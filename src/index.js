@@ -326,10 +326,14 @@ async function processSocialQueue(env) {
       const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
       const state = status.status || "PROCESSING_UPLOAD";
       const complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
-      await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, publish_error = ?, published_url = COALESCE(?, published_url), updated_at = ? WHERE id = ?")
-        .bind(state, complete ? "published" : failed ? "failed" : "queued", complete ? 1 : 0, new Date().toISOString(),
+      const publicIds = Array.isArray(status.publicaly_available_post_id) ? status.publicaly_available_post_id : [];
+      const videoId = publicIds.length ? String(publicIds[0]) : null;
+      const account = await env.DB.prepare("SELECT username FROM social_accounts WHERE platform = 'tiktok'").first();
+      const publishedUrl = videoId && account?.username ? "https://www.tiktok.com/@" + account.username + "/video/" + videoId : null;
+      await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, provider_video_id = COALESCE(?, provider_video_id), published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, publish_error = ?, published_url = COALESCE(?, published_url), updated_at = ? WHERE id = ?")
+        .bind(state, complete ? "published" : failed ? "failed" : "queued", videoId, complete ? 1 : 0, new Date().toISOString(),
           failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen").slice(0, 1000) : null,
-          status.share_url || null, new Date().toISOString(), post.id).run();
+          publishedUrl, new Date().toISOString(), post.id).run();
     } catch (error) {
       await env.DB.prepare("UPDATE social_posts SET publish_error = ?, updated_at = ? WHERE id = ?")
         .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
