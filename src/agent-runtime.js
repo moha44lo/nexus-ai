@@ -11,7 +11,7 @@ export function validateBrowserUrl(value) {
   const host = url.hostname.toLowerCase().replace(/\.$/, "");
   if (BLOCKED_HOSTS.has(host) || host.endsWith(".localhost") || host.endsWith(".local") ||
       /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      /^169\\.254\\./.test(host) || host === "[::1]" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80") || host.startsWith("[::ffff") || host.startsWith("fc") || host.startsWith("fd")) {
+      host.startsWith("169.254.") || host === "[::1]" || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[fe80") || host.startsWith("[::ffff") || host.startsWith("fc") || host.startsWith("fd")) {
     throw new Error("Lokale und private Netzwerkziele sind gesperrt.");
   }
   return url.toString();
