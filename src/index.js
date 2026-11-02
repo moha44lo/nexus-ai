@@ -606,11 +606,12 @@ export default {
       }
       if (request.method === "GET" && url.pathname === "/api/social/status") {
         const result = await env.DB.prepare("SELECT platform, COUNT(*) AS drafts, SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved FROM social_posts GROUP BY platform").all();
-        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], publishing: { tiktok: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), instagram: Boolean(env.META_APP_ID && env.META_APP_SECRET), youtube: Boolean(env.YOUTUBE_CLIENT_ID && env.YOUTUBE_CLIENT_SECRET) }, counts: result.results || [], note: "Content generation and draft management are active. Direct publishing requires official platform OAuth/API approval and credentials." });
+        const account = await env.DB.prepare("SELECT username, display_name, scope, access_expires_at, connected_at FROM social_accounts WHERE platform = 'tiktok'").first();
+        return json({ enabled: true, platforms: ["tiktok", "instagram", "youtube"], r2: Boolean(env.SOCIAL_MEDIA), tiktok: { configured: Boolean(env.TIKTOK_CLIENT_KEY && env.TIKTOK_CLIENT_SECRET), connected: Boolean(account), username: account?.username || "", displayName: account?.display_name || "", scope: account?.scope || "", expiresAt: account?.access_expires_at || null }, counts: result.results || [] });
       }
       if (request.method === "GET" && url.pathname === "/api/social/posts") {
-        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
-        return json({ posts: (result.results || []).map(row => ({ ...row, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
+        const result = await env.DB.prepare("SELECT id, platform, niche, objective, language, title, hook, script, scenes_json, caption, hashtags_json, cta, cover_text, status, scheduled_for, published_at, video_url, video_status, video_duration, video_storage_key, video_bytes, privacy_level, publish_status, publish_error, provider_post_id, published_url, created_at, updated_at FROM social_posts ORDER BY created_at DESC LIMIT 100").all();
+        return json({ posts: (result.results || []).map(row => ({ ...row, video_url: row.video_storage_key ? "/api/social/media/" + row.id : row.video_url, scenes: JSON.parse(row.scenes_json || "[]"), hashtags: JSON.parse(row.hashtags_json || "[]") })) });
       }
       const videoAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/video$/i);
       if (request.method === "POST" && videoAction) {
@@ -628,14 +629,21 @@ export default {
           "Style: polished creator-grade cinematography, visually striking opening frame, coherent motion, natural lighting, no subtitles, no logos, no watermarks.",
           "Audio: synchronized natural ambient sound and tasteful cinematic sound design. No copyrighted songs."
         ].join("\n")).trim().slice(0, 3000);
-        if (!env.AI?.run) return json({ error: "Cloudflare AI binding ist nicht verfügbar." }, 503);
+        if (!env.AI?.run) return json({ error: "Workers AI ist nicht verfügbar." }, 503);
+        if (!env.SOCIAL_MEDIA) return json({ error: "R2-Speicher ist noch nicht eingerichtet. Deployment mit SOCIAL_MEDIA-Bucket abwarten." }, 503);
         const output = await env.AI.run("xai/grok-imagine-video", { prompt, aspect_ratio: "9:16", duration, resolution: "720p" });
-        const videoUrl = output?.result?.video || output?.video || output?.result?.url;
-        if (!videoUrl || !/^https:\/\//i.test(videoUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
-        const now = new Date().toISOString();
-        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
-          .bind(videoUrl, duration, prompt, now, id).run();
-        return json({ post: { id, video_url: videoUrl, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
+        const providerUrl = output?.result?.video || output?.video || output?.result?.url;
+        if (!providerUrl || !/^https:\/\//i.test(providerUrl)) return json({ error: "Video-Modell hat keinen gültigen Video-Link zurückgegeben.", state: output?.state || "unknown" }, 502);
+        const remote = await fetch(providerUrl);
+        if (!remote.ok) return json({ error: "Das generierte Video konnte nicht geladen werden (HTTP " + remote.status + ")." }, 502);
+        const bytes = await remote.arrayBuffer();
+        if (!bytes.byteLength || bytes.byteLength > 512 * 1024 * 1024) return json({ error: "Videodatei ist leer oder größer als 512 MB." }, 413);
+        const key = "social/" + id + "/" + crypto.randomUUID() + ".mp4";
+        await env.SOCIAL_MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
+        const now = new Date().toISOString(), mediaUrl = "/api/social/media/" + id;
+        await env.DB.prepare("UPDATE social_posts SET video_url = ?, video_storage_key = ?, video_bytes = ?, video_status = 'ready', video_duration = ?, video_prompt = ?, updated_at = ? WHERE id = ?")
+          .bind(mediaUrl, key, bytes.byteLength, duration, prompt, now, id).run();
+        return json({ post: { id, video_url: mediaUrl, video_storage_key: key, video_bytes: bytes.byteLength, video_status: "ready", video_duration: duration, updated_at: now } }, 201);
       }
       if (request.method === "POST" && url.pathname === "/api/social/generate") {
         const body = await request.json();
@@ -646,12 +654,53 @@ export default {
           .bind(id, input.platform, input.niche, input.objective, input.language, generated.title, generated.hook, generated.script, JSON.stringify(generated.scenes), generated.caption, JSON.stringify(generated.hashtags), generated.cta, generated.cover_text, now, now).run();
         return json({ post: { id, ...input, ...generated, status: "draft", created_at: now, updated_at: now } }, 201);
       }
+      const publishAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(publish|schedule|publish-status)$/i);
+      if (publishAction) {
+        const [, id, action] = publishAction;
+        const post = await env.DB.prepare("SELECT * FROM social_posts WHERE id = ?").bind(id).first();
+        if (!post) return json({ error: "Content-Entwurf nicht gefunden." }, 404);
+        if (action === "publish-status") {
+          if (!post.provider_post_id) return json({ error: "Für diesen Beitrag gibt es noch keine TikTok-Publish-ID." }, 409);
+          const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
+          const state = status.status || "PROCESSING_UPLOAD", complete = state === "PUBLISH_COMPLETE", failed = state === "FAILED";
+          await env.DB.prepare("UPDATE social_posts SET publish_status = ?, status = ?, published_at = CASE WHEN ? = 1 THEN ? ELSE published_at END, published_url = COALESCE(?, published_url), publish_error = ?, updated_at = ? WHERE id = ?")
+            .bind(state, complete ? "published" : failed ? "failed" : "publishing", complete ? 1 : 0, new Date().toISOString(), status.share_url || null, failed ? String(status.fail_reason || "TikTok-Veröffentlichung fehlgeschlagen") : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : failed ? "failed" : "publishing", publish_status: state, published_url: status.share_url || null });
+        }
+        const body = await request.json().catch(() => ({}));
+        const privacy = String(body.privacy_level || "SELF_ONLY");
+        if (!["SELF_ONLY","MUTUAL_FOLLOW_FRIENDS","PUBLIC_TO_EVERYONE","FOLLOWER_OF_CREATOR"].includes(privacy)) return json({ error: "Ungültige Sichtbarkeit." }, 400);
+        if (!post.video_storage_key) return json({ error: "Bitte zuerst ein dauerhaft gespeichertes KI-Video erstellen." }, 409);
+        if (action === "schedule") {
+          const time = Date.parse(body.scheduled_for || "");
+          if (!Number.isFinite(time) || time < Date.now() + 120000 || time > Date.now() + 90 * 86400000) return json({ error: "Bitte eine Veröffentlichungszeit zwischen 2 Minuten und 90 Tagen in der Zukunft wählen." }, 400);
+          const result = await env.DB.prepare("UPDATE social_posts SET status = 'queued', privacy_level = ?, scheduled_for = ?, approved_at = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status IN ('draft','approved','queued')")
+            .bind(privacy, new Date(time).toISOString(), new Date().toISOString(), new Date().toISOString(), id).run();
+          if (!result.meta?.changes) return json({ error: "Beitrag kann nicht eingeplant werden." }, 409);
+          return json({ id, status: "queued", scheduled_for: new Date(time).toISOString(), privacy_level: privacy });
+        }
+        if (post.status !== "approved") return json({ error: "Bitte den Beitrag zuerst redaktionell freigeben." }, 409);
+        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'publishing', privacy_level = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
+          .bind(privacy, new Date().toISOString(), id).run();
+        if (!claim.meta?.changes) return json({ error: "Beitrag wird bereits verarbeitet oder ist nicht freigegeben." }, 409);
+        try {
+          const result = await publishTikTokVideo(env, { ...post, privacy_level: privacy });
+          const complete = result.status === "PUBLISH_COMPLETE";
+          await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, publish_error = NULL, updated_at = ? WHERE id = ?")
+            .bind(complete ? "published" : "publishing", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), id).run();
+          return json({ id, status: complete ? "published" : "publishing", publish_status: result.status, published_url: result.share_url || null }, 202);
+        } catch (error) {
+          await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
+            .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), id).run();
+          return json({ error: safeError(error) }, 502);
+        }
+      }
       const socialAction = url.pathname.match(/^\/api\/social\/posts\/([a-f0-9-]+)\/(approve|reject)$/i);
       if (request.method === "POST" && socialAction) {
         const [, id, action] = socialAction;
         const nextStatus = action === "approve" ? "approved" : "draft";
-        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
-          .bind(nextStatus, new Date().toISOString(), id).run();
+        const result = await env.DB.prepare("UPDATE social_posts SET status = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE approved_at END, updated_at = ? WHERE id = ? AND status IN ('draft', 'approved')")
+          .bind(nextStatus, nextStatus, new Date().toISOString(), new Date().toISOString(), id).run();
         if (!result.meta?.changes) return json({ error: "Entwurf nicht gefunden oder Status nicht änderbar." }, 404);
         return json({ id, status: nextStatus, message: action === "approve" ? "Inhalt freigegeben. Noch nicht veröffentlicht." : "Entwurf zurück in die Bearbeitung gesetzt." });
       }
