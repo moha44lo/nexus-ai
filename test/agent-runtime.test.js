@@ -96,6 +96,20 @@ test("reviewer false positives about general research do not block read-only pla
   assert.match(plan.review.reason, /Fehlalarm/);
 });
 
+test("reviewer does not block read-only market research for bibliography or output-format concerns", async () => {
+  const replies = [
+    { response: JSON.stringify({ goal: "Marktvalidierung", summary: "Offizielle Preise und Quellen vergleichen", steps: [
+      { id: "s1", tool: "browser.navigate", args: { url: "https://example.com/pricing" } },
+      { id: "s2", tool: "browser.inspect", args: {} }
+    ] }) },
+    { response: JSON.stringify({ approved: false, reason: "Bibliografische Referenzen und URLs sind unverbindlich und die Ausgabe ist nicht formatiert." }) }
+  ];
+  const env = { AI: { run: async () => replies.shift() } };
+  const plan = await createPlan(env, "Validiere Wettbewerber, offizielle Preise und Quellen für eine Marktanalyse.", []);
+  assert.equal(plan.review.approved, true);
+  assert.match(plan.review.reason, /Fehlalarm/);
+});
+
 test("search falls back to Bing when DuckDuckGo presents a CAPTCHA", async () => {
   let currentUrl = "";
   const page = {
