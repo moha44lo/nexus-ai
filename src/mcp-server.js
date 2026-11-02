@@ -1,4 +1,5 @@
 import { createPlan, needsApproval } from "./agent-runtime.js";
+import { runCrew } from "./orchestrator.js";
 const PROTOCOL_VERSION = "2025-03-26";
 const TOOLS = [
   { name: "nexus.memory.list", description: "List explicitly saved NEXUS memory facts.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -7,6 +8,8 @@ const TOOLS = [
   { name: "nexus.schedules.list", description: "List recurring NEXUS automations.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "nexus.schedules.create", description: "Create a recurring NEXUS task. Browser clicks and form submissions still pause for approval.", inputSchema: { type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 100 }, task: { type: "string", minLength: 1, maxLength: 12000 }, intervalMinutes: { type: "integer", minimum: 5, maximum: 10080 } }, required: ["name", "task"], additionalProperties: false } },
   { name: "nexus.agent.plan", description: "Create and independently review a browser automation plan without executing it.", inputSchema: { type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 12000 } }, required: ["task"], additionalProperties: false } },
+  { name: "nexus.agent.execute", description: "Execute a cognitive task with the parallel NEXUS specialist-agent team. This does not browse external websites.", inputSchema: { type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 12000 } }, required: ["task"], additionalProperties: false } },
+  { name: "nexus.workflow.start", description: "Start a durable background NEXUS multi-agent workflow and return its instance ID.", inputSchema: { type: "object", properties: { task: { type: "string", minLength: 1, maxLength: 12000 } }, required: ["task"], additionalProperties: false } },
   { name: "nexus.runs.list", description: "List recent agent execution runs.", inputSchema: { type: "object", properties: {}, additionalProperties: false } }
 ];
 
@@ -79,6 +82,20 @@ export async function handleMcpRequest(request, env) {
         const memory = await env.DB.prepare("SELECT fact, category FROM memory_facts ORDER BY updated_at DESC LIMIT 40").all();
         const plan = await createPlan(env, task, memory.results || []);
         data = { plan, approvalRequired: needsApproval(plan), executed: false };
+        break;
+      }
+      case "nexus.agent.execute": {
+        const task = String(args.task || "").trim().slice(0, 12000);
+        if (!task) return Response.json(error(id, -32602, "task is required"));
+        data = await runCrew(env, task);
+        break;
+      }
+      case "nexus.workflow.start": {
+        const task = String(args.task || "").trim().slice(0, 12000);
+        if (!task) return Response.json(error(id, -32602, "task is required"));
+        if (!env.NEXUS_CORE) return Response.json(error(id, -32603, "NEXUS Workflow binding is missing"));
+        const instance = await env.NEXUS_CORE.create({ params: { task } });
+        data = { workflowId: instance.id, status: "queued" };
         break;
       }
       case "nexus.runs.list": {
