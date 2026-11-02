@@ -51,6 +51,44 @@ export function needsApproval(plan) {
   return plan.steps.some(step => ["browser.click", "browser.fill"].includes(step.tool));
 }
 
+async function repairSelector(env, page, step, previousSelector, failure) {
+  const candidates = await page.evaluate(() => {
+    const elements = [...document.querySelectorAll("button,a,input,textarea,select,[role='button']")].slice(0, 120);
+    const unique = [];
+    for (const el of elements) {
+      const tag = el.tagName.toLowerCase();
+      const attrs = ["id", "name", "aria-label", "placeholder", "data-testid"];
+      let selector = null;
+      for (const attr of attrs) {
+        const value = el.getAttribute(attr);
+        if (!value) continue;
+        const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const candidate = attr === "id" ? "#" + CSS.escape(value) : tag + "[" + attr + '="' + escaped + '"]';
+        try { if (document.querySelectorAll(candidate).length === 1) { selector = candidate; break; } } catch {}
+      }
+      if (!selector) continue;
+      unique.push({
+        selector, tag, text: (el.innerText || el.value || "").trim().slice(0, 100),
+        type: el.getAttribute("type") || "", name: el.getAttribute("name") || "",
+        label: el.getAttribute("aria-label") || "", placeholder: el.getAttribute("placeholder") || "",
+        href: el.getAttribute("href") || ""
+      });
+    }
+    return unique;
+  });
+  if (!candidates.length) throw new Error("Keine eindeutigen interaktiven Elemente für die Selbstreparatur gefunden.");
+  const response = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
+    messages: [
+      { role: "system", content: "Du reparierst einen Browser-Selektor. Wähle ausschließlich einen selector aus der Kandidatenliste. Antworte nur als JSON {\\"selector\\":\\"...\\"}. Erfinde keinen Selektor." },
+      { role: "user", content: JSON.stringify({ intent: step.reason || step.tool, action: step.tool, previousSelector, failure: String(failure).slice(0, 300), candidates }) }
+    ],
+    max_tokens: 300
+  });
+  const repaired = extractJson(response?.response).selector;
+  if (!candidates.some(candidate => candidate.selector === repaired)) throw new Error("Selbstreparatur lieferte keinen gültigen Kandidaten.");
+  return repaired;
+}
+
 export async function runBrowserPlan(env, plan, onStep = async () => {}) {
   if (!env.BROWSER) throw new Error("Browser Run ist noch nicht aktiviert. Aktiviere den BROWSER-Binding in Cloudflare.");
   const browser = await puppeteer.launch(env.BROWSER);
@@ -70,12 +108,27 @@ export async function runBrowserPlan(env, plan, onStep = async () => {}) {
           links: [...document.querySelectorAll("a[href]")].slice(0, 30).map(a => ({ text: (a.innerText || "").trim().slice(0, 120), href: a.href })),
           inputs: [...document.querySelectorAll("input,textarea,select,button")].slice(0, 40).map(e => ({ tag: e.tagName.toLowerCase(), type: e.type || "", name: e.name || "", placeholder: e.placeholder || "", text: (e.innerText || "").trim().slice(0, 80) }))
         }));
-      } else if (step.tool === "browser.click") {
-        await page.click(step.args.selector);
-        output = { clicked: step.args.selector, url: page.url() };
-      } else if (step.tool === "browser.fill") {
-        await page.locator(step.args.selector).fill(String(step.args.value).slice(0, 2000));
-        output = { filled: step.args.selector };
+      } else if (step.tool === "browser.click" || step.tool === "browser.fill") {
+        let selector = String(step.args.selector || "");
+        let repaired = false;
+        try {
+          if (await page.locator(selector).count() !== 1) throw new Error("Selektor ist nicht eindeutig.");
+        } catch (error) {
+          selector = await repairSelector(env, page, step, selector, error);
+          repaired = true;
+        }
+        try {
+          if (step.tool === "browser.click") await page.click(selector);
+          else await page.locator(selector).fill(String(step.args.value).slice(0, 2000));
+        } catch (error) {
+          selector = await repairSelector(env, page, step, selector, error);
+          repaired = true;
+          if (step.tool === "browser.click") await page.click(selector);
+          else await page.locator(selector).fill(String(step.args.value).slice(0, 2000));
+        }
+        output = step.tool === "browser.click"
+          ? { clicked: selector, selectorRepaired: repaired, url: page.url() }
+          : { filled: selector, selectorRepaired: repaired };
       } else if (step.tool === "browser.extract") {
         const selector = step.args.selector || "body";
         output = await page.$eval(selector, el => (el.innerText || el.textContent || "").slice(0, 9000));
