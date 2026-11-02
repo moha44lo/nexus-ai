@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 test("embedded NEXUS dashboard JavaScript parses successfully", () => {
   const source = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  const scripts = [...source.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+  const scripts = [...source.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   assert.ok(scripts.length > 0, "Dashboard must contain an executable script.");
   for (const script of scripts) new vm.Script(script[1]);
 });
