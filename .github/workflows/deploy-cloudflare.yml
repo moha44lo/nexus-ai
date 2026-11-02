@@ -27,7 +27,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          NEXUS_LOGIN_PIN: ${{ secrets.NEXUS_PIN }}
+          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
           NEXUS_SESSION_SECRET: ${{ secrets.NEXUS_SESSION_SECRET }}
           NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
         run: |
@@ -55,7 +55,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          NEXUS_PIN: ${{ secrets.NEXUS_PIN }}
+          NEXUS_LOGIN_PIN: ${{ secrets.NEXUS_PIN }}
           NEXUS_SESSION_SECRET: ${{ secrets.NEXUS_SESSION_SECRET }}
           NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
         run: |
