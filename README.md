@@ -1,52 +1,64 @@
 # NEXUS AI
 
-A Cloudflare Workers personal AI agent with chat, approval-gated browser automation, reusable skills, persistent memory, scheduled tasks, execution audit history, and an authenticated MCP endpoint.
+NEXUS is a private AI operations workspace built on Cloudflare Workers, Workers AI, D1, Browser Run, and Cloudflare Workflows.
 
-## Current capabilities
+## Active capabilities
 
-- Conversational AI powered by Cloudflare Workers AI.
-- Agent planning with JSON-validated browser workflows.
-- Cloudflare Browser Run / Puppeteer: navigate, inspect, extract, click, and fill.
-- Explicit approval before browser clicks and form submissions.
-- DOM-grounded selector repair when a page changes.
-- D1-backed conversations, approved memory facts, reusable skills, schedules, run history, and step audit.
-- MCP endpoint at `/mcp` with memory, skills, schedules, and run tools.
-- GitHub Actions checks, tests, and Wrangler dry-run deployment validation.
+- **Chat:** conversational AI with persistent conversation history.
+- **Multi-agent orchestration:** Strategist, Specialist, and Critic agents run in parallel; an Orchestrator synthesizes their reports and records an audit trail.
+- **Durable background jobs:** Cloudflare Workflows run long-running agent tasks outside the lifetime of a single HTTP request. The UI can start a job and poll its status.
+- **Browser agent:** navigate, inspect, extract, click, and fill public HTTP(S) pages using Cloudflare Browser Run / Puppeteer.
+- **Human approval gate:** browser clicks and form submissions pause until the user approves them.
+- **Recurring automations:** D1-backed schedules are checked every five minutes. Text-only tasks use the multi-agent crew; browser tasks use the browser runtime and approval gate.
+- **Persistent memory:** explicitly saved facts can be added, listed, used as context, and deleted.
+- **Skills:** declarative reusable browser skills with validation, retries for idempotent steps, and audit events.
+- **MCP server:** bearer-authenticated MCP endpoint with memory, skills, schedules, run history, agent execution, planning, and durable workflow start tools.
+- **Control workspace:** responsive UI for overview, chat, agent team, automations, memory, and execution history.
 
-## Quick start
+## Stack
 
-```bash
-npm install
-npm run db:init:local
-npm run dev
-```
+- Cloudflare Workers
+- Cloudflare Workers AI (GLM-4.7-Flash)
+- Cloudflare D1
+- Cloudflare Browser Run / Puppeteer
+- Cloudflare Workflows
+- GitHub Actions + Wrangler
 
-Set these Worker secrets before deploying:
-- `NEXUS_PIN`
-- `NEXUS_SESSION_SECRET` (32+ characters)
-- `NEXUS_MCP_TOKEN` (32+ characters)
+## Local development
 
-Apply the schema to the remote D1 database and deploy:
-```bash
-npm run db:init:remote
-npm run deploy
-```
+Run: npm install
+Run: npm run db:init:local
+Run: npm run check
+Run: npm test
+Run: npm run dev
 
-The Cloudflare account must have Browser Run enabled and the `BROWSER` binding configured. Review [Browser Agent Setup](docs/BROWSER_AGENT_SETUP.md) before deployment.
+## Deployment
 
-## API overview
+The deployment workflow applies schema.sql, uploads secrets using Wrangler's versioned secret commands, and deploys the Worker.
 
-- `POST /api/login`, `POST /api/logout`
-- `POST /api/chat`, `POST /api/agent`
-- `GET/POST /api/memory`, `DELETE /api/memory/:id`
-- `GET/POST /api/skills`, `POST /api/skills/:id/run`
-- `GET/POST /api/schedules`, `PATCH/DELETE /api/schedules/:id`
-- `GET /api/agent/runs`, `GET /api/agent/runs/:id`
-- `POST /api/agent/approve`
-- MCP: `POST /mcp` with a bearer token (`nexus.agent.plan` includes independent review and does not execute actions)
+Required GitHub Actions secrets:
+- CLOUDFLARE_API_TOKEN
+- CLOUDFLARE_ACCOUNT_ID
+- NEXUS_PIN
+- NEXUS_SESSION_SECRET (32+ characters)
+- NEXUS_MCP_TOKEN (32+ characters)
 
-## Important boundaries
+The Cloudflare account must have Browser Run enabled. Review docs/BROWSER_AGENT_SETUP.md.
 
-The cloud browser is not the user's locally logged-in Chrome. Local Chrome/CDP bridging, third-party MCP aggregation, multi-agent delegation, and a full visual automation control center are not implemented yet. Browser actions that click or fill require approval. Payments, purchases, account changes, sending messages, publishing, and deletion are intentionally not exposed as supported actions.
+## Authenticated API
 
-Never commit secrets. Do not expose `NEXUS_MCP_TOKEN` in browser code.
+- POST /api/login, POST /api/logout
+- POST /api/chat, POST /api/agent
+- POST /api/workflows, GET /api/workflows/:id
+- GET/POST /api/memory, DELETE /api/memory/:id
+- GET/POST /api/skills, POST /api/skills/:id/run
+- GET/POST /api/schedules, PATCH/DELETE /api/schedules/:id
+- GET /api/agent/runs, GET /api/agent/runs/:id
+- POST /api/agent/approve
+- MCP: POST /mcp
+
+## Honest boundaries
+
+NEXUS now has a real multi-agent reasoning layer and durable background workflow execution, but it is not an unrestricted computer-use system. The specialist agents work from the user's task and supplied context; they do not independently have general web-search access. The cloud browser can operate public websites, but it is not the user's locally logged-in Chrome and does not inherit local cookies. Local desktop control, arbitrary shell access, email/calendar integrations, third-party MCP aggregation, and unrestricted external actions are not implemented. Payments, purchases, account changes, publishing, sending messages, and deletion are intentionally not exposed as supported browser actions.
+
+Browser clicks and form fills require explicit user approval. Never represent an action as completed unless the runtime confirms it.
