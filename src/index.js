@@ -151,7 +151,9 @@ async function loadMemory(){try{const d=await api("/api/memory");const host=$("m
 $("scheduleForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/schedules",{method:"POST",body:JSON.stringify({name:$("scheduleName").value,task:$("scheduleTask").value,intervalMinutes:Number($("scheduleInterval").value)})});$("scheduleForm").reset();toast("Automation gespeichert.");loadSchedules();refreshOverview();}catch(err){toast(err.message);}};
 $("refreshSchedules").onclick=loadSchedules;$("refreshRuns").onclick=loadRuns;
 $("addMemory").onclick=async()=>{const fact=prompt("Was soll NEXUS dauerhaft speichern?");if(!fact)return;try{await api("/api/memory",{method:"POST",body:JSON.stringify({fact})});toast("Fakt gespeichert.");loadMemory();refreshOverview();}catch(e){toast(e.message);}};
-async function restoreSession(){try{const state=await api("/api/session");if(state.authenticated)await enter();}catch(error){console.warn("NEXUS session restore failed:",error);}}\nrestoreSession();\n</script></body></html>`;
+async function restoreSession(){try{const state=await api("/api/session");if(state.authenticated)await enter();}catch(error){console.warn("NEXUS session restore failed:",error);}}
+restoreSession();
+</script></body></html>`;
 
 
 function json(data, status = 200, extra = {}) {
@@ -289,7 +291,11 @@ export default {
       return new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     }
 
-    if (request.method === "GET" && url.pathname === "/api/session") {\n      return json({ authenticated: await validSession(request, env) });\n    }\n\n    if (request.method === "POST" && url.pathname === "/api/login") {
+    if (request.method === "GET" && url.pathname === "/api/session") {
+      return json({ authenticated: await validSession(request, env) });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/login")
       try {
         if (!env.DB) return json({ error: "Login-Schutz ist nicht verfügbar. Datenbankbindung prüfen." }, 503);
         const ipHash = await loginIpHash(request);
