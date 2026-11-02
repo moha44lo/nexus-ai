@@ -231,6 +231,22 @@ export async function searchWithFallback(page, query) {
   };
 }
 
+export function summarizeBrowserFailure(results = []) {
+  const failed = results.filter(item => item.status !== "completed");
+  if (!failed.length) return null;
+  const first = failed[0];
+  const tool = String(first.tool || "Browser-Schritt");
+  if (first.error) return (tool + ": " + String(first.error)).slice(0, 300);
+  const output = first.output || {};
+  if (output.fallbackText) return (tool + ": " + String(output.fallbackText)).slice(0, 300);
+  if (Array.isArray(output.attempts) && output.attempts.length) {
+    const details = output.attempts.map(item => item.provider + "=" + (item.classification || item.error || "unbekannt")).join(", ");
+    return (tool + ": Keine Suchergebnisse; " + details).slice(0, 300);
+  }
+  if (output.classification) return (tool + ": Seite klassifiziert als " + output.classification + (output.url ? " (" + output.url + ")" : "")).slice(0, 300);
+  return (tool + " fehlgeschlagen (Status: " + String(first.status || "unbekannt") + ").").slice(0, 300);
+}
+
 export async function runBrowserPlan(env, plan, onStep = async () => {}) {
   if (!env.BROWSER) throw new Error("Browser Run ist noch nicht aktiviert. Aktiviere das BROWSER-Binding in Cloudflare.");
   let browser;
@@ -327,7 +343,8 @@ export async function runBrowserPlan(env, plan, onStep = async () => {}) {
     const completed = results.filter(item => item.status === "completed").length;
     const failed = results.length - completed;
     const status = failed === 0 ? "completed" : completed > 0 ? "partial" : "failed";
-    return { status, url: page.url(), title: await page.title().catch(() => ""), results, summary: completed + "/" + results.length + " Schritte erfolgreich." };
+    const error = failed ? summarizeBrowserFailure(results) : null;
+    return { status, url: page.url(), title: await page.title().catch(() => ""), results, error, summary: completed + "/" + results.length + " Schritte erfolgreich." };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 300) : "Browser-Fehler";
     return { status: "failed", error: message, results, summary: "Browser konnte nicht gestartet oder initialisiert werden." };
