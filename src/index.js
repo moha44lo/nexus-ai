@@ -302,21 +302,21 @@ async function processSocialQueue(env) {
   requireDatabase(env);
   await ensureSocialSchema(env);
   const now = new Date().toISOString();
-  const due = await env.DB.prepare("SELECT * FROM social_posts WHERE platform = 'tiktok' AND status = 'queued' AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 3").bind(now).all();
+  const due = await env.DB.prepare("SELECT * FROM social_posts WHERE platform = 'tiktok' AND status = 'queued' AND provider_post_id IS NULL AND publish_status IS NULL AND scheduled_for <= ? ORDER BY scheduled_for ASC LIMIT 3").bind(now).all();
   for (const post of due.results || []) {
-    const claim = await env.DB.prepare("UPDATE social_posts SET status = 'publishing', updated_at = ? WHERE id = ? AND status = 'queued'").bind(now, post.id).run();
+    const claim = await env.DB.prepare("UPDATE social_posts SET publish_status = 'STARTING', updated_at = ? WHERE id = ? AND status = 'queued' AND publish_status IS NULL").bind(now, post.id).run();
     if (!claim.meta?.changes) continue;
     try {
       const result = await publishTikTokVideo(env, post);
       const complete = result.status === "PUBLISH_COMPLETE";
       await env.DB.prepare("UPDATE social_posts SET status = ?, publish_status = ?, published_at = ?, updated_at = ?, publish_error = NULL WHERE id = ?")
-        .bind(complete ? "published" : "publishing", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), post.id).run();
+        .bind(complete ? "published" : "queued", result.status, complete ? new Date().toISOString() : null, new Date().toISOString(), post.id).run();
     } catch (error) {
       await env.DB.prepare("UPDATE social_posts SET status = 'failed', publish_status = 'FAILED', publish_error = ?, updated_at = ? WHERE id = ?")
         .bind(String(error.message || error).slice(0, 1000), new Date().toISOString(), post.id).run();
     }
   }
-  const pending = await env.DB.prepare("SELECT id, provider_post_id FROM social_posts WHERE status = 'publishing' AND provider_post_id IS NOT NULL ORDER BY updated_at ASC LIMIT 5").all();
+  const pending = await env.DB.prepare("SELECT id, provider_post_id FROM social_posts WHERE status = 'queued' AND provider_post_id IS NOT NULL ORDER BY updated_at ASC LIMIT 5").all();
   for (const post of pending.results || []) {
     try {
       const status = await fetchTikTokPublishStatus(env, post.provider_post_id);
@@ -489,6 +489,7 @@ export default {
         const now = Date.now(), stamp = new Date(now).toISOString();
         await env.DB.prepare("INSERT INTO social_accounts (platform, open_id, access_token_encrypted, refresh_token_encrypted, access_expires_at, refresh_expires_at, scope, connected_at, updated_at) VALUES ('tiktok', ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET open_id = excluded.open_id, access_token_encrypted = excluded.access_token_encrypted, refresh_token_encrypted = excluded.refresh_token_encrypted, access_expires_at = excluded.access_expires_at, refresh_expires_at = excluded.refresh_expires_at, scope = excluded.scope, connected_at = excluded.connected_at, updated_at = excluded.updated_at")
           .bind(result.open_id, access, refresh, new Date(now + Number(result.expires_in || 86400) * 1000).toISOString(), new Date(now + Number(result.refresh_expires_in || 31536000) * 1000).toISOString(), result.scope || "", stamp, stamp).run();
+        try { await getTikTokCreatorInfo(env); } catch {}
         return Response.redirect(new URL("/?social=tiktok-connected", request.url).toString(), 302);
       } catch (error) { return new Response("TikTok-Verbindung fehlgeschlagen: " + safeError(error), { status: 400 }); }
     }
@@ -680,7 +681,7 @@ export default {
           return json({ id, status: "queued", scheduled_for: new Date(time).toISOString(), privacy_level: privacy });
         }
         if (post.status !== "approved") return json({ error: "Bitte den Beitrag zuerst redaktionell freigeben." }, 409);
-        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'publishing', privacy_level = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
+        const claim = await env.DB.prepare("UPDATE social_posts SET status = 'queued', publish_status = 'STARTING', privacy_level = ?, publish_error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'")
           .bind(privacy, new Date().toISOString(), id).run();
         if (!claim.meta?.changes) return json({ error: "Beitrag wird bereits verarbeitet oder ist nicht freigegeben." }, 409);
         try {
