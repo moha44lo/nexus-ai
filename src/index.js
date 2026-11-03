@@ -598,8 +598,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/api/agents/catalog") {
-      if (!(await validSession(request, env))) return json({ error: "Bitte zuerst anmelden." }, { status: 401 });
-      return json({ agents: AGENT_ROSTER, capabilities: CAPABILITY_CATALOG, configuredAgents: AGENT_ROSTER.length, routedPerTask: 18 });
+      if (!(await validSession(request, env))) return json({ error: "Bitte zuerst anmelden." }, 401);
+      return json({ agents: AGENT_ROSTER.map(({ id, name, title, symbol, category, focus, model }) => ({ id, name, title, symbol, category, focus, model })), capabilities: CAPABILITY_CATALOG, configuredAgents: AGENT_ROSTER.length, routedPerTask: 18 });
     }
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "nexus-ai", model: MODEL, bindings: { ai: Boolean(env.AI), browser: Boolean(env.BROWSER), database: Boolean(env.DB), workflows: Boolean(env.NEXUS_CORE), socialMedia: Boolean(env.SOCIAL_MEDIA) } });
