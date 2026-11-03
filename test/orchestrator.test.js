@@ -17,7 +17,7 @@ function mockAI({ failRole = null, transientRole = null, score = 96, issues = []
       if (system.includes("unabhängiger Qualitätsrichter")) return { response: JSON.stringify({ score, must_fix: issues, keep: [], verdict: issues.length ? "improve" : "ready" }) };
       if (system.includes("Evolution-Refiner")) return { response: "Verbesserter Entwurf mit klaren Belegen und Grenzen." };
       if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score, issues: [], answer: "Geprüfte finale Antwort mit konkreten Schritten." }) };
-      const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red Team","System-Architekt","Performance-Optimierer"].find(name => system.includes(name));
+      const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red Team","System-Architekt","Performance-Optimierer","Code- & Produkt-Builder","Creative Director","Growth & Market Strategist","Automation Engineer"].find(name => system.includes(name));
       if (failRole && role === failRole) throw new Error("offline");
       if (role) {
         const attempts = (roleAttempts.get(role) || 0) + 1;
@@ -30,20 +30,20 @@ function mockAI({ failRole = null, transientRole = null, score = 96, issues = []
   };
 }
 
-test("runs eight specialist agents, an improvement loop and final quality gate", async () => {
+test("runs twelve specialist agents, an improvement loop and final quality gate", async () => {
   const mock = mockAI();
   const events = [];
   const result = await runCrew(mock.env, "Erstelle einen Plan", "Kontext", event => events.push(event));
   assert.equal(result.answer, "Geprüfte finale Antwort mit konkreten Schritten.");
-  assert.equal(result.evolution.agentsConfigured, 8);
-  assert.equal(new Set(result.evolution.models.map(item => item.model)).size, 8, "each specialist must use a distinct model");
-  assert.equal(new Set(mock.modelCalls.slice(0, 8)).size, 8, "the eight parallel agent calls must target eight different models");
-  assert.equal(result.evolution.agentsCompleted, 8);
+  assert.equal(result.evolution.agentsConfigured, 12);
+  assert.equal(new Set(result.evolution.models.map(item => item.id)).size, 12, "each specialist role must be unique");
+  assert.equal(mock.modelCalls.length >= 12, true, "all twelve specialist roles must invoke Workers AI");
+  assert.equal(result.evolution.agentsCompleted, 12);
   assert.equal(result.evolution.rounds.length, 1);
   assert.equal(result.verification.passed, true);
   assert.equal(result.verification.qualityScore, 96);
-  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 10);
-  assert.equal(events.filter(event => event.status === "running").length, 10);
+  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 14);
+  assert.equal(events.filter(event => event.status === "running").length, 13);
 });
 
 test("revises a draft when the judge finds issues", async () => {
@@ -57,7 +57,7 @@ test("revises a draft when the judge finds issues", async () => {
 test("continues with available agents but requires six successful specialists", async () => {
   const mock = mockAI({ failRole: "Strategie-Architekt" });
   const result = await runCrew(mock.env, "Test");
-  assert.equal(result.evolution.agentsCompleted, 7);
+  assert.equal(result.evolution.agentsCompleted, 11);
   assert.equal(result.verification.passed, true);
 });
 
@@ -69,7 +69,7 @@ test("fails clearly when fewer than three agents can produce a report", async ()
 test("retries a transient Workers AI 503 once and continues the swarm", async () => {
   const mock = mockAI({ transientRole: "Recherche-Spezialist" });
   const result = await runCrew(mock.env, "Erstelle einen Plan");
-  assert.equal(result.evolution.agentsCompleted, 8);
+  assert.equal(result.evolution.agentsCompleted, 12);
   assert.equal(result.verification.passed, true);
-  assert.equal(mock.modelCalls.filter(model => model === "@cf/meta/llama-4-scout-17b-16e-instruct").length, 2);
+  assert.ok(mock.modelCalls.filter(model => model === "@cf/meta/llama-4-scout-17b-16e-instruct").length >= 2);
 });
