@@ -1,5 +1,6 @@
 import { extractWorkersAIText } from "./model-output.js";
 import { inspectAnswer } from "./quality-control.js";
+import { EXTRA_AGENTS } from "./agent-catalog.js";
 
 const META_MODEL = "@cf/zai-org/glm-5.3";
 const REVIEW_MODEL = "@cf/deepseek-ai/deepseek-v4-flash-0731";
@@ -14,8 +15,24 @@ const ROLES = [
   { id: "critic", model: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", name: "Critic", title: "Kritik-Instanz", symbol: "C", prompt: "Du bist die kompromisslose Kritik-Instanz. Suche Widersprüche, Lücken, schwache Argumente, unbelegte Behauptungen und bessere Alternativen." },
   { id: "red_team", model: "@cf/qwen/qwq-32b", name: "Red Team", title: "Red-Team-Prüfer", symbol: "X", prompt: "Du bist das Red Team. Versuche die Lösung zu widerlegen. Suche Randfälle, Risiken, Sicherheitsprobleme, Fehlannahmen und Gründe, warum der Plan scheitern könnte." },
   { id: "architect", model: "@cf/nvidia/nemotron-3-120b-a12b", name: "Architect", title: "System-Architekt", symbol: "◇", prompt: "Du bist der System-Architekt. Verbinde die Erkenntnisse zu einem klaren, effizienten Gesamtplan. Achte auf Reihenfolge, Abhängigkeiten und Wartbarkeit." },
-  { id: "optimizer", model: "@cf/zai-org/glm-4.7-flash", name: "Optimizer", title: "Performance-Optimierer", symbol: "↗", prompt: "Du bist der Performance-Optimierer. Verbessere Klarheit, Effizienz, Wirkung und Umsetzbarkeit. Entferne unnötige Komplexität." }
+  { id: "optimizer", model: "@cf/zai-org/glm-4.7-flash", name: "Optimizer", title: "Performance-Optimierer", symbol: "↗", prompt: "Du bist der Performance-Optimierer. Verbessere Klarheit, Effizienz, Wirkung und Umsetzbarkeit. Entferne unnötige Komplexität." },
+  { id: "builder", model: "@cf/qwen/qwq-32b", name: "Builder", title: "Code- & Produkt-Builder", symbol: "⌘", prompt: "Du bist der Code- und Produkt-Builder. Entwirf robuste Implementierungen, prüfe Schnittstellen, Datenmodelle, Tests und konkrete technische Umsetzung. Erfinde keine vorhandenen Dateien oder ausgeführten Tests." },
+  { id: "creative", model: "@cf/meta/llama-4-scout-17b-16e-instruct", name: "Creative", title: "Creative Director", symbol: "✳", prompt: "Du bist Creative Director. Entwickle originelle Konzepte, starke Marken, visuelle Richtungen, Storytelling und prägnante Kommunikation. Vermeide generische Ideen." },
+  { id: "growth", model: "@cf/google/gemma-4-26b-a4b-it", name: "Growth", title: "Growth & Market Strategist", symbol: "↗", prompt: "Du bist Growth- und Marktstratege. Analysiere Zielgruppen, Positionierung, Wettbewerb, Akquisition und Monetarisierung. Trenne Belege von Hypothesen." },
+  { id: "automation", model: "@cf/zai-org/glm-4.7-flash", name: "Automation", title: "Automation Engineer", symbol: "⟳", prompt: "Du bist Automation Engineer. Zerlege Prozesse in sichere, nachvollziehbare Automationen, erkenne Trigger, Abhängigkeiten, Fehlerpfade und Freigabepunkte. Behaupte keine ausgeführten Aktionen." }
 ];
+
+export const AGENT_ROSTER = Object.freeze([...ROLES, ...EXTRA_AGENTS]);
+const CORE_ROLES = ROLES;
+const MAX_ACTIVE_SPECIALISTS = 6;
+function selectRoles(task) {
+  const normalized = String(task || "").toLocaleLowerCase("de");
+  const ranked = EXTRA_AGENTS.map((role, index) => ({ role, index, score: role.keywords.reduce((score, keyword) => score + (normalized.includes(keyword) ? Math.max(1, keyword.length / 5) : 0), 0) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, MAX_ACTIVE_SPECIALISTS)
+    .map(item => item.role);
+  return [...CORE_ROLES, ...ranked];
+}
 
 const TRANSIENT_AI_ERROR = /(?:\\b429\\b|\\b500\\b|\\b502\\b|\\b503\\b|\\b504\\b|rate.?limit|overload|temporarily unavailable|internal server error|timed? ?out|timeout)/i;
 
@@ -33,7 +50,7 @@ async function invoke(env, model, messages, maxTokens = 900) {
   throw new Error("Workers AI request failed after retry.");
 }
 async function emit(onAgent, agent, name, title, status, output = "") {
-  await onAgent({ agent, name, title, status, output: String(output).slice(0, 5000), model: ROLES.find(item => item.id === agent)?.model || null, createdAt: new Date().toISOString() });
+  await onAgent({ agent, name, title, status, output: String(output).slice(0, 5000), model: AGENT_ROSTER.find(item => item.id === agent)?.model || null, createdAt: new Date().toISOString() });
 }
 function parseJson(text) {
   const first = text.indexOf("{"), last = text.lastIndexOf("}");
@@ -41,12 +58,27 @@ function parseJson(text) {
   return JSON.parse(text.slice(first, last + 1));
 }
 
+async function runWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 export async function runCrew(env, task, context = "", onAgent = async () => {}) {
   const shared = "Nutzeraufgabe:\n" + String(task).slice(0, 10000) +
     (context ? "\n\nKontext und bereitgestellte Belege:\n" + String(context).slice(0, 7000) : "") +
     "\n\nWICHTIG: Du hast in diesem Lauf keine externen Websites, Dateien oder Konten geöffnet. Behaupte keine externe Recherche oder ausgeführten Aktionen. Fehlende Belege müssen als offen markiert werden.";
   const started = new Date().toISOString();
-  const reports = await Promise.all(ROLES.map(async role => {
+  const selectedRoles = selectRoles(task);
+  const reports = await runWithConcurrency(selectedRoles, 6, async role => {
     await emit(onAgent, role.id, role.name, role.title, "running");
     try {
       const output = await invoke(env, role.model, [
@@ -61,7 +93,7 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
       await emit(onAgent, role.id, role.name, role.title, "failed", message);
       return { agent: role.id, name: role.name, title: role.title, status: "failed", output: message, createdAt: started };
     }
-  }));
+  });
   const usable = reports.filter(item => item.status === "completed");
   if (usable.length < 3) throw new Error("Zu wenige Agenten konnten eine belastbare Antwort liefern (mindestens 3 erforderlich).");
 
@@ -132,10 +164,10 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
     answer: finalAnswer,
     agents: [...reports, ...improvementRounds.map(item => ({ agent: "improvement_" + item.round, name: "Evolution Loop", title: "Verbesserungsrunde " + item.round, status: item.verdict === "review_unavailable" ? "failed" : "completed", output: JSON.stringify(item) })),
       { agent: "quality_gate", name: "Quality Gate", title: "Finale Qualitätsprüfung", status: quality.score === null ? "failed" : "completed", output: JSON.stringify(quality) }],
-    evolution: { rounds: improvementRounds, maxRounds: MAX_IMPROVEMENT_ROUNDS, agentsConfigured: ROLES.length, agentsCompleted: completedAgents, models: ROLES.map(({ id, name, model }) => ({ id, name, model })) },
+    evolution: { rounds: improvementRounds, maxRounds: MAX_IMPROVEMENT_ROUNDS, agentsConfigured: AGENT_ROSTER.length, agentsSelected: selectedRoles.length, agentsCompleted: completedAgents, models: AGENT_ROSTER.map(({ id, name, model }) => ({ id, name, model })) },
     verification: {
       passed: completedAgents >= 6 && quality.passed,
-      note: completedAgents + "/" + ROLES.length + " Spezialagenten abgeschlossen. " + improvementRounds.length + " Verbesserungsrunde(n). " + quality.note,
+      note: completedAgents + "/" + selectedRoles.length + " aktive Spezialagenten abgeschlossen. " + improvementRounds.length + " Verbesserungsrunde(n). " + quality.note,
       qualityScore: quality.score,
       issues: quality.issues
     }
