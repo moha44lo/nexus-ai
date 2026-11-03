@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runCrew } from "../src/orchestrator.js";
+import { runCrew, AGENT_ROSTER } from "../src/orchestrator.js";
 
 function mockAI({ failRole = null, transientRole = null, score = 96, issues = [] } = {}) {
   const calls = [];
@@ -30,20 +30,21 @@ function mockAI({ failRole = null, transientRole = null, score = 96, issues = []
   };
 }
 
-test("runs twelve specialist agents, an improvement loop and final quality gate", async () => {
+test("routes a 62-agent roster through the core and six selected specialists", async () => {
   const mock = mockAI();
   const events = [];
   const result = await runCrew(mock.env, "Erstelle einen Plan", "Kontext", event => events.push(event));
   assert.equal(result.answer, "Geprüfte finale Antwort mit konkreten Schritten.");
-  assert.equal(result.evolution.agentsConfigured, 12);
-  assert.equal(new Set(result.evolution.models.map(item => item.id)).size, 12, "each specialist role must be unique");
-  assert.equal(mock.modelCalls.length >= 12, true, "all twelve specialist roles must invoke Workers AI");
-  assert.equal(result.evolution.agentsCompleted, 12);
+  assert.equal(result.evolution.agentsConfigured, 62);
+  assert.equal(result.evolution.agentsSelected, 18);
+  assert.equal(new Set(result.evolution.models.map(item => item.id)).size, 62, "each specialist role must be unique");
+  assert.equal(mock.modelCalls.length >= 18, true, "all eighteen routed specialist roles must invoke Workers AI");
+  assert.equal(result.evolution.agentsCompleted, 18);
   assert.equal(result.evolution.rounds.length, 1);
   assert.equal(result.verification.passed, true);
   assert.equal(result.verification.qualityScore, 96);
-  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 14);
-  assert.equal(events.filter(event => event.status === "running").length, 14);
+  assert.equal(result.agents.filter(agent => agent.status === "completed").length, 20);
+  assert.equal(events.filter(event => event.status === "running").length, 20);
 });
 
 test("revises a draft when the judge finds issues", async () => {
@@ -57,7 +58,7 @@ test("revises a draft when the judge finds issues", async () => {
 test("continues with available agents but requires six successful specialists", async () => {
   const mock = mockAI({ failRole: "Strategie-Architekt" });
   const result = await runCrew(mock.env, "Test");
-  assert.equal(result.evolution.agentsCompleted, 11);
+  assert.equal(result.evolution.agentsCompleted, 17);
   assert.equal(result.verification.passed, true);
 });
 
