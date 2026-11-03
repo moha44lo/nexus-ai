@@ -1,6 +1,7 @@
 import { extractWorkersAIText } from "./model-output.js";
 import { inspectAnswer } from "./quality-control.js";
 import { EXTRA_AGENTS } from "./agent-catalog.js";
+import { formatRuntimeError } from "./runtime-errors.js";
 
 const META_MODEL = "@cf/zai-org/glm-5.3";
 const REVIEW_MODEL = "@cf/deepseek-ai/deepseek-v4-flash-0731";
@@ -95,13 +96,40 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
     }
   });
   const usable = reports.filter(item => item.status === "completed");
-  if (usable.length < 3) throw new Error("Zu wenige Agenten konnten eine belastbare Antwort liefern (mindestens 3 erforderlich).");
-
-  let draft = await invoke(env, META_MODEL, [
-    { role: "system", content: "Du bist NEXUS, der leitende Meta-Orchestrator. Führe alle Agentenberichte zu einer präzisen, vollständigen Antwort zusammen. Beantworte die Nutzeraufgabe. Trenne Fakten, Annahmen und offene Punkte. Erfinde keine Quellen, Belege oder ausgeführten Aktionen. Nutze klare Überschriften und konkrete nächste Schritte." },
-    { role: "user", content: shared + "\n\nAgentenberichte:\n" + usable.map(x => "## " + x.title + "\n" + x.output).join("\n\n") }
-  ], 1800);
-  if (!draft.trim()) throw new Error("NEXUS konnte die Agentenberichte nicht zusammenführen.");
+  let draft = "";
+  let fallbackReport = null;
+  if (usable.length) {
+    try {
+      draft = await invoke(env, META_MODEL, [
+        { role: "system", content: "Du bist NEXUS, der leitende Meta-Orchestrator. Führe alle verfügbaren Agentenberichte zu einer präzisen, vollständigen Antwort zusammen. Beantworte die Nutzeraufgabe. Trenne Fakten, Annahmen und offene Punkte. Erfinde keine Quellen, Belege oder ausgeführten Aktionen. Nutze klare Überschriften und konkrete nächste Schritte." },
+        { role: "user", content: shared + "\n\nVerfügbare Agentenberichte:\n" + usable.map(x => "## " + x.title + "\n" + x.output).join("\n\n") }
+      ], 1800);
+    } catch (error) {
+      if (usable.length >= 3) throw error;
+      draft = usable.map(x => "## " + x.title + "\n" + x.output).join("\n\n");
+      await emit(onAgent, "nexus_fallback", "NEXUS Core", "Teilantwort aus verfügbaren Agenten", "completed", "Meta-Zusammenführung nicht verfügbar. Die vorhandenen Agentenberichte werden unverändert ausgegeben. " + formatRuntimeError(error));
+      fallbackReport = { agent: "nexus_fallback", name: "NEXUS Core", title: "Teilantwort aus verfügbaren Agenten", model: META_MODEL, status: "completed", output: draft, createdAt: started };
+    }
+    if (!draft.trim()) {
+      if (usable.length >= 3) throw new Error("NEXUS konnte die Agentenberichte nicht zusammenführen.");
+      draft = usable.map(x => "## " + x.title + "\n" + x.output).join("\n\n");
+    }
+  } else {
+    await emit(onAgent, "nexus_fallback", "NEXUS Core", "Direkte Antwort", "running");
+    try {
+      draft = await invoke(env, META_MODEL, [
+        { role: "system", content: "Du bist NEXUS AI. Beantworte die Aufgabe direkt, sorgfältig und auf Deutsch. Trenne Fakten, Annahmen und offene Punkte. Erfinde keine Quellen oder ausgeführten Aktionen. Wenn die KI-Infrastruktur nicht verfügbar ist, benenne den Fehler ehrlich." },
+        { role: "user", content: shared }
+      ], 1800);
+      if (!draft.trim()) throw new Error("NEXUS Core lieferte eine leere Antwort.");
+      await emit(onAgent, "nexus_fallback", "NEXUS Core", "Direkte Antwort", "completed", draft);
+      fallbackReport = { agent: "nexus_fallback", name: "NEXUS Core", title: "Direkte Antwort", model: META_MODEL, status: "completed", output: draft, createdAt: started };
+    } catch (error) {
+      const message = formatRuntimeError(error);
+      await emit(onAgent, "nexus_fallback", "NEXUS Core", "Direkte Antwort", "failed", message);
+      throw new Error(message);
+    }
+  }
 
   const improvementRounds = [];
   for (let round = 1; round <= MAX_IMPROVEMENT_ROUNDS; round++) {
@@ -162,12 +190,12 @@ export async function runCrew(env, task, context = "", onAgent = async () => {})
   const completedAgents = reports.filter(x => x.status === "completed").length;
   return {
     answer: finalAnswer,
-    agents: [...reports, ...improvementRounds.map(item => ({ agent: "improvement_" + item.round, name: "Evolution Loop", title: "Verbesserungsrunde " + item.round, status: item.verdict === "review_unavailable" ? "failed" : "completed", output: JSON.stringify(item) })),
+    agents: [...reports, ...(fallbackReport ? [fallbackReport] : []), ...improvementRounds.map(item => ({ agent: "improvement_" + item.round, name: "Evolution Loop", title: "Verbesserungsrunde " + item.round, status: item.verdict === "review_unavailable" ? "failed" : "completed", output: JSON.stringify(item) })),
       { agent: "quality_gate", name: "Quality Gate", title: "Finale Qualitätsprüfung", status: quality.score === null ? "failed" : "completed", output: JSON.stringify(quality) }],
     evolution: { rounds: improvementRounds, maxRounds: MAX_IMPROVEMENT_ROUNDS, agentsConfigured: AGENT_ROSTER.length, agentsSelected: selectedRoles.length, agentsCompleted: completedAgents, models: AGENT_ROSTER.map(({ id, name, model }) => ({ id, name, model })) },
     verification: {
       passed: completedAgents >= 6 && quality.passed,
-      note: completedAgents + "/" + selectedRoles.length + " aktive Spezialagenten abgeschlossen. " + improvementRounds.length + " Verbesserungsrunde(n). " + quality.note,
+      note: completedAgents + "/" + selectedRoles.length + " aktive Spezialagenten abgeschlossen. " + (completedAgents < 3 ? "Teillauf: verfügbare Ergebnisse werden trotzdem geliefert. " : "") + (fallbackReport ? "NEXUS Core hat den Antwort-Fallback übernommen. " : "") + improvementRounds.length + " Verbesserungsrunde(n). " + quality.note,
       qualityScore: quality.score,
       issues: quality.issues
     }

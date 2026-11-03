@@ -1,4 +1,5 @@
 import { NEXUSWorkflow } from "./nexus-workflow.js";
+import { hasValidSession } from "./session-auth.js";
 import { createPlan, needsApproval, runBrowserPlan, validateBrowserUrl } from "./agent-runtime.js";
 import { compileSkill } from "./skill-engine.js";
 import { handleMcpRequest } from "./mcp-server.js";
@@ -785,16 +786,7 @@ async function createSession(env) {
   return `${expires}.${await hmac(env.NEXUS_SESSION_SECRET, payload)}`;
 }
 async function validSession(request, env) {
-  if (!env.NEXUS_SESSION_SECRET) return false;
-  const authorization = request.headers.get("Authorization") || "";
-  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-  const token = bearer || cookieValue(request, "nexus_session");
-  if (!token) return false;
-  const [expiresText, signature] = token.split(".");
-  const expires = Number(expiresText);
-  if (!Number.isSafeInteger(expires) || expires < Math.floor(Date.now() / 1000) || !signature) return false;
-  const expected = await hmac(env.NEXUS_SESSION_SECRET, `nexus:${expires}`);
-  return signature === expected;
+  return hasValidSession(request, env.NEXUS_SESSION_SECRET, hmac);
 }
 function cookieHeader(value, secure = true) {
   return `nexus_session=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}`;
