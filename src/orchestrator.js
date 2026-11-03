@@ -50,7 +50,7 @@ async function invoke(env, model, messages, maxTokens = 900) {
   throw new Error("Workers AI request failed after retry.");
 }
 async function emit(onAgent, agent, name, title, status, output = "") {
-  await onAgent({ agent, name, title, status, output: String(output).slice(0, 5000), model: ROLES.find(item => item.id === agent)?.model || null, createdAt: new Date().toISOString() });
+  await onAgent({ agent, name, title, status, output: String(output).slice(0, 5000), model: AGENT_ROSTER.find(item => item.id === agent)?.model || null, createdAt: new Date().toISOString() });
 }
 function parseJson(text) {
   const first = text.indexOf("{"), last = text.lastIndexOf("}");
