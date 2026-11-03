@@ -1,7 +1,7 @@
 export async function hasValidSession(request, secret, sign) {
   if (!secret) return false;
   const authorization = request.headers.get("Authorization") || "";
-  const bearer = authorization.match(/^Bearer\\s+(.+)$/i)?.[1];
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   // A stale sessionStorage bearer must never shadow a valid HttpOnly cookie.
   const candidates = [...new Set([bearer, readCookie(request, "nexus_session")].filter(Boolean))];
   for (const token of candidates) {
