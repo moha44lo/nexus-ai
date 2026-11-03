@@ -17,13 +17,13 @@ function mockAI({ failRole = null, transientRole = null, score = 96, issues = []
       if (system.includes("unabhängiger Qualitätsrichter")) return { response: JSON.stringify({ score, must_fix: issues, keep: [], verdict: issues.length ? "improve" : "ready" }) };
       if (system.includes("Evolution-Refiner")) return { response: "Verbesserter Entwurf mit klaren Belegen und Grenzen." };
       if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score, issues: [], answer: "Geprüfte finale Antwort mit konkreten Schritten." }) };
-      const role = ["Strategie-Architekt","Recherche-Spezialist","Fach-Experte","Daten-Analyst","Kritik-Instanz","Red Team","System-Architekt","Performance-Optimierer","Code- und Produkt-Builder","Creative Director","Growth- und Marktstratege","Automation Engineer"].find(name => system.includes(name));
+      const role = AGENT_ROSTER.find(item => system.includes(item.prompt));
       if (failRole && role?.title === failRole) throw new Error("offline");
       if (role) {
-        const attempts = (roleAttempts.get(role) || 0) + 1;
-        roleAttempts.set(role, attempts);
-        if (transientRole === role && attempts === 1) throw new Error("503 temporarily unavailable");
-        return { response: role + " Bericht." };
+        const attempts = (roleAttempts.get(role.id) || 0) + 1;
+        roleAttempts.set(role.id, attempts);
+        if (transientRole === role.title && attempts === 1) throw new Error("503 temporarily unavailable");
+        return { response: role.title + " Bericht." };
       }
       throw new Error("Unexpected role: " + system.slice(0, 100));
     } } }
