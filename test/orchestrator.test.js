@@ -70,7 +70,7 @@ test("fails clearly when fewer than three agents can produce a report", async ()
 test("retries a transient Workers AI 503 once and continues the swarm", async () => {
   const mock = mockAI({ transientRole: "Recherche-Spezialist" });
   const result = await runCrew(mock.env, "Erstelle einen Plan");
-  assert.equal(result.evolution.agentsCompleted, 12);
+  assert.equal(result.evolution.agentsCompleted, 18);
   assert.equal(result.verification.passed, true);
   assert.ok(mock.modelCalls.filter(model => model === "@cf/meta/llama-4-scout-17b-16e-instruct").length >= 2);
 });
