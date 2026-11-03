@@ -97,7 +97,7 @@ test("uses the NEXUS Core fallback when every specialist fails", async () => {
 
 test("fails with the actionable error when the NEXUS Core fallback is unavailable", async () => {
   const env = { AI: { run: async () => ({ response: "" }) } };
-  await assert.rejects(() => runCrew(env, "Test"), /NEXUS Core lieferte eine leere Antwort/);
+  await assert.rejects(() => runCrew(env, "Test"), /Workers AI lieferte keinen Textinhalt/);
 });
 
 test("retries a transient Workers AI 503 once and continues the swarm", async () => {
