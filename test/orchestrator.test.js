@@ -62,9 +62,42 @@ test("continues with available agents but requires six successful specialists", 
   assert.equal(result.verification.passed, true);
 });
 
-test("fails clearly when fewer than three agents can produce a report", async () => {
+test("returns a reviewed partial answer when only two specialists are available", async () => {
+  let specialistCalls = 0;
+  const env = { AI: { run: async (_model, input) => {
+    const system = input.messages[0].content;
+    if (system.includes("leitende Meta-Orchestrator")) return { response: "Zusammengeführte Teilantwort." };
+    if (system.includes("unabhängiger Qualitätsrichter")) return { response: JSON.stringify({ score: 95, must_fix: [], keep: [], verdict: "ready" }) };
+    if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score: 95, issues: [], answer: "NEXUS liefert die verfügbare Teilantwort." }) };
+    specialistCalls += 1;
+    if (specialistCalls <= 2) return { response: "Verifizierter Teilbericht." };
+    throw new Error("provider offline");
+  } } };
+  const result = await runCrew(env, "Test");
+  assert.equal(result.answer, "NEXUS liefert die verfügbare Teilantwort.");
+  assert.equal(result.evolution.agentsCompleted, 2);
+  assert.equal(result.verification.passed, false);
+  assert.match(result.verification.note, /Teillauf/);
+});
+
+test("uses the NEXUS Core fallback when every specialist fails", async () => {
+  const env = { AI: { run: async (_model, input) => {
+    const system = input.messages[0].content;
+    if (system.includes("Du bist NEXUS AI.")) return { response: "Direkte NEXUS-Antwort." };
+    if (system.includes("unabhängiger Qualitätsrichter")) return { response: JSON.stringify({ score: 90, must_fix: [], keep: [], verdict: "ready" }) };
+    if (system.includes("finale Quality Gate")) return { response: JSON.stringify({ score: 90, issues: [], answer: "Geprüfte Fallback-Antwort." }) };
+    throw new Error("provider offline");
+  } } };
+  const result = await runCrew(env, "Test");
+  assert.equal(result.answer, "Geprüfte Fallback-Antwort.");
+  assert.equal(result.evolution.agentsCompleted, 0);
+  assert.equal(result.verification.passed, false);
+  assert.ok(result.agents.some(agent => agent.agent === "nexus_fallback" && agent.status === "completed"));
+});
+
+test("fails with the actionable error when the NEXUS Core fallback is unavailable", async () => {
   const env = { AI: { run: async () => ({ response: "" }) } };
-  await assert.rejects(() => runCrew(env, "Test"), /Zu wenige Agenten/);
+  await assert.rejects(() => runCrew(env, "Test"), /NEXUS Core lieferte eine leere Antwort/);
 });
 
 test("retries a transient Workers AI 503 once and continues the swarm", async () => {
