@@ -885,6 +885,59 @@ function safeError(error) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Public Payhip webhook receiver. Keep this route before session-protected API routes.
+    if (request.method === "POST" && url.pathname === "/api/payhip/webhook") {
+      try {
+        const apiKey = env.PAYHIP_API_KEY;
+        if (!apiKey) return json({ error: "Payhip webhook is not configured." }, 503);
+        const event = await request.json();
+        if (!event || typeof event !== "object" || Array.isArray(event)) return json({ error: "Invalid webhook payload." }, 400);
+        const supplied = String(event.signature || "").toLowerCase();
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
+        const expected = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+        if (supplied.length !== expected.length) return json({ error: "Invalid webhook signature." }, 401);
+        let mismatch = 0;
+        for (let i = 0; i < expected.length; i++) mismatch |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+        if (mismatch !== 0) return json({ error: "Invalid webhook signature." }, 401);
+        const eventType = String(event.type || "");
+        if (!["paid", "refunded", "subscription.created", "subscription.deleted"].includes(eventType)) return json({ error: "Unsupported Payhip event." }, 400);
+        const eventId = String(event.id || event.subscription_id || "");
+        if (!eventId) return json({ error: "Missing event identifier." }, 400);
+        if (!env.DB) return json({ error: "Database binding is unavailable." }, 503);
+        await env.DB.prepare(`CREATE TABLE IF NOT EXISTS payhip_events (
+          event_id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          buyer_email TEXT,
+          amount_cents INTEGER,
+          currency TEXT,
+          product_names TEXT,
+          event_timestamp INTEGER,
+          received_at TEXT NOT NULL
+        )`).run();
+        const products = Array.isArray(event.items)
+          ? event.items.map(item => String(item.product_name || "").slice(0, 160)).filter(Boolean).join(", ").slice(0, 1000)
+          : String(event.product_name || event.plan_name || "").slice(0, 300);
+        const email = String(event.email || event.customer_email || "").slice(0, 320);
+        const amount = Number.isFinite(Number(event.price)) ? Math.trunc(Number(event.price)) : null;
+        const currency = String(event.currency || "").slice(0, 12);
+        const eventTimestamp = Number.isFinite(Number(event.date)) ? Math.trunc(Number(event.date)) : null;
+        await env.DB.prepare(`INSERT OR IGNORE INTO payhip_events
+          (event_id, event_type, buyer_email, amount_cents, currency, product_names, event_timestamp, received_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(eventId, eventType, email || null, amount, currency || null, products || null, eventTimestamp, new Date().toISOString()).run();
+        return json({ ok: true, received: true });
+      } catch (error) {
+        console.error("Payhip webhook:", safeError(error));
+        return json({ error: "Could not process Payhip webhook." }, 500);
+      }
+    }
+    if (request.method === "GET" && url.pathname === "/api/payhip/events") {
+      if (!(await validSession(request, env))) return json({ error: "Bitte zuerst anmelden." }, 401);
+      if (!env.DB) return json({ error: "Database binding is unavailable." }, 503);
+      const result = await env.DB.prepare("SELECT event_id, event_type, buyer_email, amount_cents, currency, product_names, event_timestamp, received_at FROM payhip_events ORDER BY received_at DESC LIMIT 100").all();
+      return json({ events: result.results || [] });
+    }
     if (request.method === "GET" && url.pathname === "/api/agents/catalog") {
       if (!(await validSession(request, env))) return json({ error: "Bitte zuerst anmelden." }, 401);
       return json({ agents: AGENT_ROSTER.map(({ id, name, title, symbol, category, focus, model }) => ({ id, name, title, symbol, category, focus, model })), capabilities: CAPABILITY_CATALOG, configuredAgents: AGENT_ROSTER.length, routedPerTask: 18 });
