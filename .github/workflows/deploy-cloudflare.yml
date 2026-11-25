@@ -37,6 +37,7 @@ jobs:
           NEXUS_MCP_TOKEN: ${{ secrets.NEXUS_MCP_TOKEN }}
           TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          PAYHIP_API_KEY: ${{ secrets.PAYHIP_API_KEY }}
         run: |
           set -euo pipefail
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID NEXUS_PIN NEXUS_SESSION_SECRET NEXUS_MCP_TOKEN; do
@@ -84,7 +85,7 @@ jobs:
           set -euo pipefail
           secrets_file="$(mktemp)"
           trap 'rm -f "$secrets_file"' EXIT
-          jq -n --arg pin "$NEXUS_PIN" --arg session "$NEXUS_SESSION_SECRET" --arg mcp "$NEXUS_MCP_TOKEN" --arg ttkey "$TIKTOK_CLIENT_KEY" --arg ttsecret "$TIKTOK_CLIENT_SECRET" '{NEXUS_LOGIN_PIN:$pin,NEXUS_SESSION_SECRET:$session,NEXUS_MCP_TOKEN:$mcp,TIKTOK_CLIENT_KEY:$ttkey,TIKTOK_CLIENT_SECRET:$ttsecret} | with_entries(select(.value != ""))' > "$secrets_file"
+          jq -n --arg pin "$NEXUS_PIN" --arg session "$NEXUS_SESSION_SECRET" --arg mcp "$NEXUS_MCP_TOKEN" --arg ttkey "$TIKTOK_CLIENT_KEY" --arg ttsecret "$TIKTOK_CLIENT_SECRET" --arg payhip "$PAYHIP_API_KEY" '{NEXUS_LOGIN_PIN:$pin,NEXUS_SESSION_SECRET:$session,NEXUS_MCP_TOKEN:$mcp,TIKTOK_CLIENT_KEY:$ttkey,TIKTOK_CLIENT_SECRET:$ttsecret,PAYHIP_API_KEY:$payhip} | with_entries(select(.value != ""))' > "$secrets_file"
           npx wrangler deploy --secrets-file "$secrets_file"
       - name: Smoke test live chat
         shell: bash
